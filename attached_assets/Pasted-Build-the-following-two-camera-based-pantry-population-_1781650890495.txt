@@ -1,0 +1,178 @@
+Build the following two camera-based pantry population features. Both share a confirmation/edit screen component.
+
+─────────────────────────────────────────────────────────
+
+FEATURE 1: SCAN FRIDGE / PANTRY
+
+Flow:
+1. Request camera permission using navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).
+   Show an in-app permission explanation modal BEFORE triggering the browser prompt:
+   "📷 Camera Access — PantrySwipe needs your camera to detect food items. No footage is stored."
+   Buttons: "Allow Camera" (triggers getUserMedia) | "Not Now" (returns to pantry setup options).
+   If browser denies permission: show instructions card "Go to your browser settings → Site Settings → Camera → Allow for this site."
+
+2. Open live camera view (full screen):
+   - Stream video to a <video> element (width: 100%, height: 100vh, object-fit: cover)
+   - Overlay: white rounded rectangle frame in the center (not a hard crop — just a visual guide)
+   - Overlay text at top: "Point at food items — hold steady" (white text, subtle shadow)
+   - Animated blue scan line (top to bottom, 2s loop, 40% opacity) within the frame guide
+   - Bottom tray: semi-transparent dark panel showing detected items as they accumulate
+     Each detected item appears as a pill: "[emoji] Name · qty unit" sliding up with spring animation
+   - "Done →" button (blue, full width) at bottom of tray — disabled until at least 1 item detected
+   - "✕ Cancel" button top-left
+
+3. Auto-capture logic:
+   Every 2500ms, use a hidden <canvas> element to capture a frame from the <video> element:
+     canvas.getContext('2d').drawImage(videoRef.current, 0, 0, canvas.width, canvas.height)
+     const base64 = canvas.toDataURL('image/jpeg', 0.8)
+   Send base64 to backend endpoint POST /api/vision/scan-pantry with body: { image: base64 }
+
+4. Backend endpoint POST /api/vision/scan-pantry:
+   Call Anthropic Claude API (claude-sonnet-4-6) with:
+     model: 'claude-sonnet-4-6'
+     max_tokens: 1000
+     messages: [{
+       role: 'user',
+       content: [
+         { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: req.body.image } },
+         { type: 'text', text: 'You are a pantry inventory AI. Identify every visible food item in this image. Return ONLY a valid JSON array, no other text. Each object must have: name (string, clean common name), quantity (number, estimate 1 if unclear), unit (string: one of pieces/g/kg/ml/L/pack/bunch/bottle/can/bag), category (string: one of dairy/produce/meat/seafood/frozen/grains/condiments/sauces/spices/drinks/snacks/baking/other), location (string: one of fridge/freezer/pantry/spice-rack). If nothing is visible or identifiable, return an empty array [].' }
+       ]
+     }]
+   Parse the response content as JSON. Return the array to the frontend.
+   Wrap in try/catch — if parsing fails return [].
+
+5. On each response from the backend:
+   Merge new items into the running detected list (React state array).
+   Duplicate check: if an item with the same name (case-insensitive) already exists in the list, add the quantity to the existing item instead of creating a duplicate.
+   Animate new items sliding up into the bottom tray.
+
+6. When user taps "Done →":
+   Stop the 2500ms interval.
+   Stop the camera stream: stream.getTracks().forEach(t => t.stop())
+   Navigate to the shared ConfirmationEditScreen component, passing the detected items array.
+
+─────────────────────────────────────────────────────────
+
+FEATURE 2: SCAN RECEIPT
+
+Flow:
+1. Same camera permission flow as Feature 1.
+
+2. Open camera in photo capture mode (not continuous detection):
+   - Live video preview (same full-screen setup)
+   - White rectangle frame overlay with corner bracket marks (receipt guide)
+   - Instruction text: "Align receipt in the frame — tap shutter to capture"
+   - Torch toggle button top-right: use track.applyConstraints({ advanced: [{ torch: true }] }) — catch errors silently if device doesn't support it
+   - Large shutter button centered at bottom (white circle, 72px, with inner circle)
+   - "Upload from gallery" link below shutter (use <input type="file" accept="image/*" capture="environment"> hidden, triggered on tap)
+
+3. On shutter tap / gallery select:
+   Capture frame using canvas (same technique as Feature 1) OR use the File from gallery input.
+   Show loading overlay on top of the captured image: "Reading your receipt... 🧾" with animated receipt icon (lines appearing one by one using CSS animation).
+
+4. Send to backend endpoint POST /api/vision/scan-receipt with body: { image: base64 }
+
+5. Backend endpoint POST /api/vision/scan-receipt:
+   Call Claude API:
+     Same structure as scan-pantry but with this text prompt:
+     'You are a grocery receipt parser. Read this receipt image carefully. Extract every food and grocery item. Ignore non-food items (bags, batteries, cleaning products). Return ONLY a valid JSON array, no other text. Each object: name (string, clean readable product name — not the barcode or SKU), quantity (number — if receipt shows "2x Milk" use 2, else default to 1), unit (string: pieces/g/kg/ml/L/pack/can/bottle/bag — infer from product type), category (string: dairy/produce/meat/seafood/frozen/grains/condiments/sauces/spices/drinks/snacks/baking/other), estimated_price (number or null — extract from receipt if visible). If no grocery items are found or image is unreadable return [].'
+   Parse response as JSON. Return array to frontend.
+
+6. If returned array is empty or has fewer than 2 items:
+   Show error state on camera screen: "Receipt unclear 📄 — try better lighting, flatten the receipt, or move closer" with "Try Again" button and "Type manually instead" link.
+
+7. If successful: navigate to ConfirmationEditScreen with the detected items array.
+
+─────────────────────────────────────────────────────────
+
+SHARED: CONFIRMATION + EDIT SCREEN (ConfirmationEditScreen component)
+
+This screen is used by BOTH scan flows and the manual entry flow.
+
+Props: items: DetectedItem[], source: 'fridge-scan' | 'receipt-scan' | 'manual'
+
+State: editableItems — a copy of items that the user can modify freely.
+
+Layout (full screen white modal, slides up):
+
+HEADER:
+  Back arrow (top left) — goes back to scan screen
+  Title: "Review Items" (Playfair Display, 22px, --text-primary)
+  Subtitle: "[X] items detected · Edit before adding" (13px Inter, --text-muted)
+  Divider line
+
+ITEM LIST (scrollable, padding 16px):
+  Each item rendered as an editable card:
+    background: #F0F6FF
+    border: 1px solid #E2EAFF
+    border-radius: 16px
+    padding: 14px
+    margin-bottom: 10px
+
+  Card layout:
+    Row 1:
+      Left: category emoji (auto-assigned, 28px) in 44x44 rounded square (#FFFFFF bg)
+      Center: text input for name (16px Inter SemiBold, full width, no border, bg transparent)
+      Right: trash icon (Lucide Trash2, 18px, #94A3B8 — tap to remove item from list with confirm snackbar)
+    
+    Row 2 (below, flex row with gaps):
+      Quantity: number input with − and + buttons on either side (stepper pattern)
+        Min value: 0.1, step: 1 for whole numbers, 0.5 for weight
+      Unit: dropdown select (pieces / g / kg / ml / L / pack / bunch / bottle / can / bag)
+      Category: dropdown select with emoji prefix (🥛 Dairy / 🥦 Produce / 🥩 Meat / 🐟 Seafood / ❄️ Frozen / 🌾 Grains / 🧂 Condiments / 🫙 Sauces / 🌶️ Spices / 🍷 Drinks / 🍫 Snacks / 🥄 Baking / 📦 Other)
+    
+    Row 3 (optional, shown if category suggests it):
+      Location: pill selector — [Fridge] [Freezer] [Pantry] [Spice Rack]
+      Active pill: blue filled. Inactive: light border.
+
+  For receipt scan items only — show estimated_price in small grey text below the name if available: "~$2.49"
+
+  "＋ Add an item we missed" button at bottom of list:
+    Adds a blank card with all empty fields at the end of the list
+    Name input auto-focuses
+
+FOOTER (sticky, white, border-top):
+  Left: "[X] items ready to add"
+  Right: "Add to Pantry →" button (blue, height 52px, border-radius 14px)
+
+ON "Add to Pantry →" tap:
+  Validate: no item has an empty name (highlight empty name fields in red if any)
+  POST all items to backend endpoint POST /api/pantry/bulk-add:
+    body: { items: editableItems[] }
+  Backend writes each item to pantry_items table with:
+    user_id (from session)
+    name, quantity, unit, category, location
+    purchase_date: today (Date.now())
+    expiry_date: null (user can set later from pantry screen)
+    source: 'fridge-scan' | 'receipt-scan' | 'manual'
+    created_at: now()
+  On success:
+    Show full-screen success animation: checkmark draws itself (SVG stroke animation, 600ms)
+    Text: "✅ [X] items added to your pantry!"
+    After 1.2s: navigate to Pantry screen
+    Newly added items get a brief blue highlight flash (CSS animation, 800ms) so user can see exactly where they landed
+    Scroll position jumps to first newly added item
+
+─────────────────────────────────────────────────────────
+
+CAMERA UTILITY — shared hook useCameraStream.ts:
+
+Create a reusable React hook that both scan features use:
+
+  function useCameraStream(facingMode: 'environment' | 'user' = 'environment') {
+    Returns: { videoRef, stream, isLoading, error, captureFrame, stopStream }
+    
+    captureFrame(): string — captures current video frame as base64 JPEG at quality 0.8
+    stopStream(): void — calls stream.getTracks().forEach(t => t.stop())
+    error states: 'permission-denied' | 'not-supported' | 'unknown'
+  }
+
+─────────────────────────────────────────────────────────
+
+ERROR STATES TO HANDLE:
+
+- Camera permission denied → show instructions card with device-specific help text (detect iOS vs Android via userAgent)
+- Claude API timeout (>10s) → show "Taking longer than usual..." message, retry once automatically
+- Claude returns invalid JSON → silently retry the capture once; if second attempt also fails, show "Couldn't detect items — try repositioning"
+- No items detected after 3 captures → show nudge: "Nothing detected yet — move closer to the items and ensure good lighting"
+- Network offline → "You're offline — camera scanning needs an internet connection. Try manual entry instead."
