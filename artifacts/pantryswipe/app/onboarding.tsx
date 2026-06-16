@@ -21,29 +21,13 @@ import ScanReceiptModal from "@/components/ScanReceiptModal";
 import ConfirmationEditScreen from "@/components/ConfirmationEditScreen";
 import type { DetectedItem, ScanSource } from "@/types/scanning";
 
-const { width, height: screenHeight } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 const TOTAL_STEPS = 9;
 
-type ScanItem = { id: string; emoji: string; name: string; qty: string; unit: string; category: string };
 type PantryFlow = "fridge" | "receipt" | "manual" | null;
 type UnitOption = "pieces" | "g" | "kg" | "ml" | "L" | "pack" | "can" | "bunch" | "tbsp" | "cup";
 const UNITS: UnitOption[] = ["pieces", "g", "kg", "ml", "L", "pack", "can", "bunch", "tbsp", "cup"];
 const CATEGORIES = ["Produce", "Dairy", "Meat", "Grains", "Condiments", "Sauces", "Spices", "Beverages", "Snacks", "Frozen"];
-
-const MOCK_FRIDGE_ITEMS: ScanItem[] = [
-  { id: "f1", emoji: "🥦", name: "Broccoli", qty: "1", unit: "head", category: "Produce" },
-  { id: "f2", emoji: "🥛", name: "Milk", qty: "1", unit: "carton", category: "Dairy" },
-  { id: "f3", emoji: "🧀", name: "Cheddar", qty: "200", unit: "g", category: "Dairy" },
-  { id: "f4", emoji: "🥚", name: "Eggs", qty: "6", unit: "pieces", category: "Produce" },
-  { id: "f5", emoji: "🍅", name: "Tomatoes", qty: "4", unit: "pieces", category: "Produce" },
-];
-const MOCK_RECEIPT_ITEMS: ScanItem[] = [
-  { id: "r1", emoji: "🥛", name: "Full Cream Milk 2L", qty: "1", unit: "pack", category: "Dairy" },
-  { id: "r2", emoji: "🍞", name: "Sourdough Bread", qty: "1", unit: "pack", category: "Grains" },
-  { id: "r3", emoji: "🧈", name: "Unsalted Butter", qty: "250", unit: "g", category: "Dairy" },
-  { id: "r4", emoji: "🍗", name: "Chicken Breast", qty: "500", unit: "g", category: "Meat" },
-  { id: "r5", emoji: "🫘", name: "Black Beans (can)", qty: "1", unit: "can", category: "Grains" },
-];
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const PROFANITY_LIST = [
@@ -174,37 +158,6 @@ export default function OnboardingScreen() {
     notNowTxt: { fontSize: 14, fontWeight: "500" },
   }), [OB]);
 
-  const cs = useMemo(() => StyleSheet.create({
-    targetBox: { position: "absolute", top: "15%", left: "10%", right: "10%", height: "55%", borderWidth: 2, borderColor: "#ffffff99", borderRadius: 16, overflow: "hidden" },
-    scanLine: { width: "100%", height: 2, backgroundColor: "#5B8EF5BB" },
-    scanInstruction: { position: "absolute", top: "72%", left: 0, right: 0, color: "#fff", textAlign: "center", fontSize: 13, paddingHorizontal: 20 },
-    pillsWrap: { position: "absolute", top: 80, left: 16, right: 16, gap: 6 },
-    pill: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, alignSelf: "flex-start" },
-    pillTxt: { color: "#fff", fontSize: 13, fontWeight: "600" },
-    bottomPanel: { position: "absolute", bottom: 0, left: 0, right: 0, padding: 24, paddingBottom: 48, gap: 12 },
-    itemCount: { fontSize: 13, fontWeight: "500", textAlign: "center" },
-    doneBtn: { paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-    doneTxt: { color: "#fff", fontSize: 16, fontWeight: "700" },
-    switchTxt: { fontSize: 13, textAlign: "center" },
-    receiptFrame: { position: "absolute", top: "15%", left: "10%", right: "10%", height: "55%", borderRadius: 4 },
-    corner: { position: "absolute", width: 24, height: 24, borderColor: "#fff" },
-    shutter: { width: 70, height: 70, borderRadius: 35, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-    shutterInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: "#E84040" },
-    closeBtn: { position: "absolute", top: 52, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: "#00000066", alignItems: "center", justifyContent: "center" },
-  }), [OB]);
-
-  const rv = useMemo(() => StyleSheet.create({
-    container: { flex: 1 },
-    header: { padding: 20, borderBottomWidth: 1 },
-    title: { fontSize: 22, fontWeight: "700", marginBottom: 4 },
-    sub: { fontSize: 13 },
-    row: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 12, borderWidth: 1 },
-    itemName: { fontSize: 15, fontWeight: "600" },
-    itemMeta: { fontSize: 12, marginTop: 2 },
-    footer: { padding: 20, borderTopWidth: 1 },
-    addBtn: { paddingVertical: 15, borderRadius: 12, alignItems: "center" },
-    addTxt: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  }), [OB]);
 
   const me = useMemo(() => StyleSheet.create({
     container: { flex: 1 },
