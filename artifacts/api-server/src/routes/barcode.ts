@@ -1,6 +1,8 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { db, productsTable, insertProductSchema } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { barcodeLimiter } from "../middleware/rateLimiters";
+import { BarcodeParamSchema } from "../lib/schemas";
 
 const router: IRouter = Router();
 
@@ -14,7 +16,7 @@ interface ExternalProduct {
 async function queryOpenFoodFacts(barcode: string): Promise<ExternalProduct | null> {
   try {
     const res = await fetch(
-      `https://world.openfoodfacts.org/api/v0/product/${barcode}.json`,
+      `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`,
       { signal: AbortSignal.timeout(8000) },
     );
     if (!res.ok) return null;
@@ -48,7 +50,7 @@ async function queryUpcItemDb(barcode: string): Promise<ExternalProduct | null> 
   if (!apiKey) return null;
   try {
     const res = await fetch(
-      `https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`,
+      `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`,
       {
         headers: { "user_key": apiKey, "key_type": "3scale" },
         signal: AbortSignal.timeout(8000),
@@ -78,13 +80,14 @@ async function queryUpcItemDb(barcode: string): Promise<ExternalProduct | null> 
   }
 }
 
-router.get("/barcode/:barcode", async (req, res) => {
-  const { barcode } = req.params;
-
-  if (!barcode || !/^[\w-]{4,20}$/.test(barcode)) {
-    res.status(400).json({ error: "Invalid barcode format" });
+router.get("/barcode/:barcode", barcodeLimiter, async (req: Request, res: Response) => {
+  const paramResult = BarcodeParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    res.status(400).json({ error: "Invalid barcode — must be 8–14 digits" });
     return;
   }
+
+  const { barcode } = paramResult.data;
 
   // 1. Internal database lookup
   const [existing] = await db
@@ -110,7 +113,7 @@ router.get("/barcode/:barcode", async (req, res) => {
     return;
   }
 
-  // 2. Open Food Facts
+  // 2. Open Food Facts (no key required)
   const offProduct = await queryOpenFoodFacts(barcode);
   if (offProduct) {
     const parsed = insertProductSchema.safeParse({
@@ -148,7 +151,7 @@ router.get("/barcode/:barcode", async (req, res) => {
     return;
   }
 
-  // 3. UPCitemDB
+  // 3. UPCitemDB (optional paid key)
   const upcProduct = await queryUpcItemDb(barcode);
   if (upcProduct) {
     const parsed = insertProductSchema.safeParse({
