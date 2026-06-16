@@ -1,6 +1,8 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
+  Image,
   Linking,
   Modal,
   Platform,
@@ -20,6 +22,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
+import { lookupBarcode, type BarcodeProduct } from "@/services/barcodeService";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -66,13 +69,25 @@ const RECIPE_GROUPS = [
   { label: "🌱 Plant-Based", filter: (r: Recipe) => r.tags.some((t) => t.includes("vegan") || t.includes("vegetarian")) },
 ];
 
-const BARCODE_DEMOS: { name: string; quantity: number; unit: string; category: typeof CATEGORY_ITEMS[number]; emoji: string }[] = [
-  { name: "Himalayan Pink Salt", quantity: 500, unit: "g", category: "Spices", emoji: "🧂" },
-  { name: "Heinz Tomato Ketchup", quantity: 570, unit: "ml", category: "Sauces", emoji: "🍅" },
-  { name: "Organic Rolled Oats", quantity: 900, unit: "g", category: "Pantry", emoji: "🌾" },
-  { name: "Almond Milk", quantity: 1, unit: "L", category: "Fridge", emoji: "🥛" },
-  { name: "Soy Sauce", quantity: 250, unit: "ml", category: "Sauces", emoji: "🫙" },
-];
+type BarcodePhase = "camera" | "loading" | "found" | "not_found";
+
+function mapToAppCategory(category?: string | null): typeof CATEGORY_ITEMS[number] {
+  if (!category) return "Pantry";
+  const l = category.toLowerCase();
+  if (l.includes("dairy") || l.includes("milk") || l.includes("yogurt") || l.includes("cheese") || l.includes("beverage") || l.includes("drink") || l.includes("juice") || l.includes("beer") || l.includes("wine") || l.includes("soda")) return "Fridge";
+  if (l.includes("frozen") || l.includes("ice cream")) return "Freezer";
+  if (l.includes("spice") || l.includes("herb") || l.includes("seasoning") || l.includes("salt") || l.includes("pepper")) return "Spices";
+  if (l.includes("sauce") || l.includes("condiment") || l.includes("ketchup") || l.includes("mustard") || l.includes("dressing") || l.includes("vinegar")) return "Sauces";
+  if (l.includes("fruit") || l.includes("vegetable") || l.includes("produce") || l.includes("fresh") || l.includes("plant")) return "Produce";
+  return "Pantry";
+}
+
+function categoryToEmoji(cat: typeof CATEGORY_ITEMS[number]): string {
+  const map: Record<typeof CATEGORY_ITEMS[number], string> = {
+    Fridge: "🧊", Freezer: "❄️", Pantry: "🥫", Spices: "🌶️", Sauces: "🫙", Produce: "🥦",
+  };
+  return map[cat] ?? "🛒";
+}
 
 export default function PantryScreen() {
   const colors = useColors();
@@ -92,18 +107,46 @@ export default function PantryScreen() {
   const [newItemQty, setNewItemQty] = useState("1");
   const [newItemUnit, setNewItemUnit] = useState("pieces");
   const [newItemCategory, setNewItemCategory] = useState<typeof CATEGORY_ITEMS[number]>("Pantry");
-  const [scanning, setScanning] = useState(false);
-  const [scannedProduct, setScannedProduct] = useState<typeof BARCODE_DEMOS[number] | null>(null);
+
+  // Barcode scanner state machine
+  const [barcodePhase, setBarcodePhase] = useState<BarcodePhase>("camera");
+  const [barcodeStatusMsg, setBarcodeStatusMsg] = useState("Searching Database");
+  const [foundProduct, setFoundProduct] = useState<BarcodeProduct | null>(null);
+  const [scannedBarcode, setScannedBarcode] = useState("");
+  const [barcodeQty, setBarcodeQty] = useState("1");
+  const [barcodeUnit, setBarcodeUnit] = useState("pieces");
+  const [barcodeExpiry, setBarcodeExpiry] = useState("");
+  const [barcodeCategory, setBarcodeCategory] = useState<typeof CATEGORY_ITEMS[number]>("Pantry");
+  // Manual entry fallback
+  const [manualName, setManualName] = useState("");
+  const [manualBrand, setManualBrand] = useState("");
+  const [manualCategory, setManualCategory] = useState<typeof CATEGORY_ITEMS[number]>("Pantry");
+  const [manualExpiry, setManualExpiry] = useState("");
+
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const barcodeScanLock = useRef(false);
-  // Use SCREEN_HEIGHT - tab bar height (mirrors Discover tab approach — avoids circular onLayout measurement)
+
   const TAB_BAR_H = Platform.OS === "web" ? 68 : 60;
   const [topH, setTopH] = useState(0);
-  const PANEL_H = 80; // matches stickyPanel explicit height below
+  const PANEL_H = 80;
   const listHeight = topH > 0 ? Math.max(120, SCREEN_HEIGHT - TAB_BAR_H - topH - PANEL_H) : 0;
-
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
+
+  // Animate scan line while camera is live
+  useEffect(() => {
+    if (!showBarcodeModal || barcodePhase !== "camera") return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanLineAnim, { toValue: 1, duration: 1500, useNativeDriver: false }),
+        Animated.timing(scanLineAnim, { toValue: 0, duration: 1500, useNativeDriver: false }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [showBarcodeModal, barcodePhase]);
+
+  const scanLineY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 180] });
 
   const filtered = pantryItems.filter((item) => {
     const matchCat = activeCategory === "All" || item.category === activeCategory;
@@ -140,61 +183,112 @@ export default function PantryScreen() {
     setShowAddModal(false);
   };
 
-  const handleScanStart = () => {
-    setScanning(true);
-    setScannedProduct(null);
-    scanLineAnim.setValue(0);
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scanLineAnim, { toValue: 1, duration: 1200, useNativeDriver: false }),
-        Animated.timing(scanLineAnim, { toValue: 0, duration: 1200, useNativeDriver: false }),
-      ])
-    ).start();
-    setTimeout(() => {
-      const product = BARCODE_DEMOS[Math.floor(Math.random() * BARCODE_DEMOS.length)];
-      setScannedProduct(product);
-      setScanning(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }, 2500);
+  // ── Barcode lookup helpers ──────────────────────────────────────────────
+
+  const resetBarcodeModal = () => {
+    barcodeScanLock.current = false;
+    setBarcodePhase("camera");
+    setBarcodeStatusMsg("Searching Database");
+    setFoundProduct(null);
+    setScannedBarcode("");
+    setBarcodeQty("1");
+    setBarcodeUnit("pieces");
+    setBarcodeExpiry("");
+    setBarcodeCategory("Pantry");
+    setManualName("");
+    setManualBrand("");
+    setManualCategory("Pantry");
+    setManualExpiry("");
+  };
+
+  const doLookup = async (barcode: string) => {
+    setScannedBarcode(barcode);
+    setBarcodePhase("loading");
+    setBarcodeStatusMsg("Searching Database");
+
+    const STATUS_SEQUENCE = [
+      "Searching Database",
+      "Searching Open Food Facts",
+      "Searching UPCitemDB",
+    ] as const;
+    let msgIdx = 0;
+    const interval = setInterval(() => {
+      msgIdx = Math.min(msgIdx + 1, STATUS_SEQUENCE.length - 1);
+      setBarcodeStatusMsg(STATUS_SEQUENCE[msgIdx]);
+    }, 1800);
+
+    try {
+      const product = await lookupBarcode(barcode);
+      clearInterval(interval);
+      if (product) {
+        const cat = mapToAppCategory(product.category);
+        setFoundProduct(product);
+        setBarcodeCategory(cat);
+        setBarcodePhase("found");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        setBarcodePhase("not_found");
+      }
+    } catch {
+      clearInterval(interval);
+      setBarcodePhase("not_found");
+    }
   };
 
   const handleBarcodeScanned = ({ data }: { type: string; data: string }) => {
-    if (barcodeScanLock.current || scannedProduct) return;
+    if (barcodeScanLock.current || barcodePhase !== "camera") return;
     barcodeScanLock.current = true;
-    const idx = data.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % BARCODE_DEMOS.length;
-    const product = BARCODE_DEMOS[idx];
-    setScannedProduct(product);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    doLookup(data);
   };
 
-  const handleAddScanned = () => {
-    if (!scannedProduct) return;
+  const handleDemoScan = () => {
+    if (barcodeScanLock.current) return;
+    barcodeScanLock.current = true;
+    // Coca-Cola Original 330ml — real Open Food Facts barcode
+    doLookup("5000159407236");
+  };
+
+  const handleAddFound = () => {
+    if (!foundProduct) return;
     const newItem: PantryItem = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-      name: scannedProduct.name,
-      quantity: scannedProduct.quantity,
-      unit: scannedProduct.unit,
-      category: scannedProduct.category,
+      name: foundProduct.name,
+      quantity: parseFloat(barcodeQty) || 1,
+      unit: barcodeUnit,
+      category: barcodeCategory,
       status: "Fresh",
-      emoji: scannedProduct.emoji,
+      emoji: categoryToEmoji(barcodeCategory),
     };
     addToPantry(newItem);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowBarcodeModal(false);
-    setScannedProduct(null);
+    resetBarcodeModal();
   };
 
-  const scanLineY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 180] });
+  const handleAddManual = () => {
+    if (!manualName.trim()) return;
+    const newItem: PantryItem = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+      name: manualName.trim(),
+      quantity: 1,
+      unit: "pieces",
+      category: manualCategory,
+      status: "Fresh",
+      emoji: categoryToEmoji(manualCategory),
+    };
+    addToPantry(newItem);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowBarcodeModal(false);
+    resetBarcodeModal();
+  };
 
   const itemCardBg = isDark ? colors.card : "#FFFFFF";
   const itemCardBorder = isDark ? colors.border : "#E8EFFE";
   const iconBoxBg = isDark ? colors.cardElevated : "#EEF4FF";
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      {/* ── TOP SECTION (measured to derive list height) ── */}
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* ── TOP SECTION ── */}
       <View onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
         {/* ── HEADER ── */}
         <View style={[styles.header, { paddingTop: topPadding + 6 }]}>
@@ -209,7 +303,7 @@ export default function PantryScreen() {
           <View style={styles.headerBtns}>
             <TouchableOpacity
               style={[styles.scanBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
-              onPress={() => { setScannedProduct(null); setShowBarcodeModal(true); }}
+              onPress={() => { resetBarcodeModal(); setShowBarcodeModal(true); }}
             >
               <Feather name="camera" size={18} color={colors.primary} />
             </TouchableOpacity>
@@ -298,95 +392,94 @@ export default function PantryScreen() {
         </View>
       </View>
 
-      {/* ── ITEM LIST — height from onLayout; overflow:hidden clips items at boundary so panel stays visible ── */}
+      {/* ── ITEM LIST ── */}
       <View style={{ height: listHeight || SCREEN_HEIGHT * 0.5, overflow: "hidden" }}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {filtered.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Feather name="shopping-bag" size={36} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              No items in {activeCategory === "All" ? "pantry" : activeCategory}
-            </Text>
-            <TouchableOpacity
-              style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
-              onPress={() => setShowAddModal(true)}
-            >
-              <Text style={[styles.emptyBtnText, { fontFamily: "Inter_700Bold" }]}>Add Item</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          filtered.map((item) => {
-            const statusBg = isDark
-              ? (STATUS_BG_DARK[item.status] ?? "rgba(148,163,184,0.12)")
-              : (STATUS_BG[item.status] ?? "#F9FAFB");
-            const txt = STATUS_TEXT[item.status] ?? "#6B7280";
-            const dot = STATUS_DOT[item.status] ?? "#9CA3AF";
-            return (
-              <View key={item.id} style={[styles.pantryItem, { backgroundColor: itemCardBg, borderColor: itemCardBorder }]}>
-                <View style={[styles.itemIconBox, { backgroundColor: iconBoxBg }]}>
-                  <Text style={styles.itemEmoji}>{item.emoji}</Text>
-                </View>
-                <View style={styles.itemInfo}>
-                  <Text style={[styles.itemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={[styles.itemDetail, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
-                    {item.quantity} {item.unit} · {item.category}
-                  </Text>
-                </View>
-                <View style={styles.itemRight}>
-                  <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
-                    <View style={[styles.statusDot, { backgroundColor: dot }]} />
-                    <Text style={[styles.statusText, { color: txt, fontFamily: "Inter_500Medium" }]}>{item.status}</Text>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {filtered.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Feather name="shopping-bag" size={36} color={colors.textMuted} />
+              <Text style={[styles.emptyText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                No items in {activeCategory === "All" ? "pantry" : activeCategory}
+              </Text>
+              <TouchableOpacity
+                style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setShowAddModal(true)}
+              >
+                <Text style={[styles.emptyBtnText, { fontFamily: "Inter_700Bold" }]}>Add Item</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            filtered.map((item) => {
+              const statusBg = isDark
+                ? (STATUS_BG_DARK[item.status] ?? "rgba(148,163,184,0.12)")
+                : (STATUS_BG[item.status] ?? "#F9FAFB");
+              const txt = STATUS_TEXT[item.status] ?? "#6B7280";
+              const dot = STATUS_DOT[item.status] ?? "#9CA3AF";
+              return (
+                <View key={item.id} style={[styles.pantryItem, { backgroundColor: itemCardBg, borderColor: itemCardBorder }]}>
+                  <View style={[styles.itemIconBox, { backgroundColor: iconBoxBg }]}>
+                    <Text style={styles.itemEmoji}>{item.emoji}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); removeFromPantry(item.id); }}>
-                    <Feather name="trash-2" size={15} color={colors.textMuted} />
-                  </TouchableOpacity>
+                  <View style={styles.itemInfo}>
+                    <Text style={[styles.itemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.itemDetail, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                      {item.quantity} {item.unit} · {item.category}
+                    </Text>
+                  </View>
+                  <View style={styles.itemRight}>
+                    <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                      <View style={[styles.statusDot, { backgroundColor: dot }]} />
+                      <Text style={[styles.statusText, { color: txt, fontFamily: "Inter_500Medium" }]}>{item.status}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); removeFromPantry(item.id); }}>
+                      <Feather name="trash-2" size={15} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            );
-          })
-        )}
-        {/* Pantry Intelligence footer */}
-        {filtered.length > 0 && (
-          <View style={[styles.intelligencePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.intelligenceTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
-              Pantry Intelligence
-            </Text>
-            <View style={styles.intelligenceRows}>
-              <View style={styles.intelligenceRow}>
-                <View style={[styles.intelligenceIcon, { backgroundColor: colors.primary + "22" }]}>
-                  <Feather name="check-circle" size={14} color={colors.primary} />
+              );
+            })
+          )}
+          {filtered.length > 0 && (
+            <View style={[styles.intelligencePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.intelligenceTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
+                Pantry Intelligence
+              </Text>
+              <View style={styles.intelligenceRows}>
+                <View style={styles.intelligenceRow}>
+                  <View style={[styles.intelligenceIcon, { backgroundColor: colors.primary + "22" }]}>
+                    <Feather name="check-circle" size={14} color={colors.primary} />
+                  </View>
+                  <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
+                    <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>{completeRecipes} complete recipes</Text>{" "}you can cook right now
+                  </Text>
                 </View>
-                <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-                  <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>{completeRecipes} complete recipes</Text>{" "}you can cook right now
-                </Text>
-              </View>
-              <View style={styles.intelligenceRow}>
-                <View style={[styles.intelligenceIcon, { backgroundColor: "#F59E0B22" }]}>
-                  <Feather name="plus-circle" size={14} color="#F59E0B" />
+                <View style={styles.intelligenceRow}>
+                  <View style={[styles.intelligenceIcon, { backgroundColor: "#F59E0B22" }]}>
+                    <Feather name="plus-circle" size={14} color="#F59E0B" />
+                  </View>
+                  <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
+                    <Text style={{ fontFamily: "Inter_700Bold", color: "#F59E0B" }}>1 ingredient away</Text>{" "}from {oneIngredientAway} more
+                  </Text>
                 </View>
-                <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-                  <Text style={{ fontFamily: "Inter_700Bold", color: "#F59E0B" }}>1 ingredient away</Text>{" "}from {oneIngredientAway} more
-                </Text>
-              </View>
-              <View style={styles.intelligenceRow}>
-                <View style={[styles.intelligenceIcon, { backgroundColor: colors.saveBlue + "22" }]}>
-                  <Feather name="dollar-sign" size={14} color={colors.saveBlue} />
+                <View style={styles.intelligenceRow}>
+                  <View style={[styles.intelligenceIcon, { backgroundColor: colors.saveBlue + "22" }]}>
+                    <Feather name="dollar-sign" size={14} color={colors.saveBlue} />
+                  </View>
+                  <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
+                    Estimated pantry value:{" "}
+                    <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.saveBlue }}>${pantryValue}</Text>
+                  </Text>
                 </View>
-                <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-                  Estimated pantry value:{" "}
-                  <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.saveBlue }}>${pantryValue}</Text>
-                </Text>
               </View>
             </View>
-          </View>
-        )}
-      </ScrollView>
+          )}
+        </ScrollView>
       </View>
 
       {/* ── STICKY "WHAT CAN I MAKE?" PANEL ── */}
@@ -411,7 +504,7 @@ export default function PantryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── "WHAT CAN I MAKE?" BOTTOM SHEET MODAL ── */}
+      {/* ── "WHAT CAN I MAKE?" BOTTOM SHEET ── */}
       <Modal
         visible={showWhatCanIMake}
         animationType="slide"
@@ -422,8 +515,6 @@ export default function PantryScreen() {
           <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowWhatCanIMake(false)} activeOpacity={1} />
           <View style={[styles.sheet, { backgroundColor: colors.background }]}>
             <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
-
-            {/* Sheet header */}
             <View style={styles.sheetHeader}>
               <Text style={[styles.sheetTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
                 What Can I Make?
@@ -437,8 +528,6 @@ export default function PantryScreen() {
                 <Feather name="x" size={20} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
-
-            {/* Grouped recipe list */}
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
               {RECIPE_GROUPS.map((group) => {
                 const groupItems = matchableRecipes.filter(({ recipe }) => group.filter(recipe));
@@ -459,24 +548,15 @@ export default function PantryScreen() {
                           <Text style={{ fontSize: 20 }}>{CUISINE_EMOJIS[recipe.cuisine] ?? "🍽"}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text
-                            style={[styles.sheetRowName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}
-                            numberOfLines={1}
-                          >
+                          <Text style={[styles.sheetRowName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
                             {recipe.title}
                           </Text>
                           <Text style={[styles.sheetRowMeta, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
                             {recipe.ingredients.filter((i) => i.inPantry).length}/{recipe.ingredients.length} ingredients · {recipe.prepTime + recipe.cookTime} min
                           </Text>
                         </View>
-                        <View style={[
-                          styles.sheetScore,
-                          { backgroundColor: score >= 80 ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)" },
-                        ]}>
-                          <Text style={[
-                            styles.sheetScoreText,
-                            { color: score >= 80 ? "#059669" : "#D97706", fontFamily: "Inter_600SemiBold" },
-                          ]}>
+                        <View style={[styles.sheetScore, { backgroundColor: score >= 80 ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)" }]}>
+                          <Text style={[styles.sheetScoreText, { color: score >= 80 ? "#059669" : "#D97706", fontFamily: "Inter_600SemiBold" }]}>
                             ✓ {score}%
                           </Text>
                         </View>
@@ -591,130 +671,319 @@ export default function PantryScreen() {
         </View>
       </Modal>
 
-      {/* ── BARCODE MODAL ── */}
+      {/* ── BARCODE SCANNER MODAL ── */}
       <Modal
         visible={showBarcodeModal}
         animationType="slide"
         presentationStyle="formSheet"
         onRequestClose={() => {
-          barcodeScanLock.current = false;
-          setScannedProduct(null);
           setShowBarcodeModal(false);
+          resetBarcodeModal();
         }}
       >
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Scan Barcode 📷</Text>
 
-          {scannedProduct ? (
-            /* ── RESULT VIEW ── */
-            <View style={styles.scannedResult}>
-              <View style={[styles.scannedIcon, { backgroundColor: colors.card }]}>
-                <Text style={{ fontSize: 48 }}>{scannedProduct.emoji}</Text>
+          {/* Header row */}
+          <View style={styles.barcodeHeader}>
+            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold", marginBottom: 0 }]}>
+              {barcodePhase === "found" ? "Product Found 🎉" :
+               barcodePhase === "not_found" ? "Product Not Found" :
+               barcodePhase === "loading" ? "Looking Up Barcode" :
+               "Scan Barcode 📷"}
+            </Text>
+            <TouchableOpacity
+              onPress={() => { setShowBarcodeModal(false); resetBarcodeModal(); }}
+              style={styles.barcodeCloseBtn}
+            >
+              <Feather name="x" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          {/* ── LOADING PHASE ── */}
+          {barcodePhase === "loading" && (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 20 }} />
+              <Text style={[styles.loadingStatus, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+                {barcodeStatusMsg}
+              </Text>
+              <Text style={[styles.loadingBarcode, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                {scannedBarcode}
+              </Text>
+            </View>
+          )}
+
+          {/* ── FOUND PHASE ── */}
+          {barcodePhase === "found" && foundProduct && (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.foundContent}>
+              {/* Product image or placeholder */}
+              {foundProduct.imageUrl ? (
+                <Image
+                  source={{ uri: foundProduct.imageUrl }}
+                  style={styles.productImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={[styles.productImagePlaceholder, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={{ fontSize: 52 }}>{categoryToEmoji(barcodeCategory)}</Text>
+                </View>
+              )}
+
+              {/* Source badge */}
+              <View style={[styles.sourceBadge, { backgroundColor: "#ECFDF5" }]}>
+                <Feather name="check-circle" size={13} color="#059669" />
+                <Text style={[styles.sourceBadgeText, { color: "#059669", fontFamily: "Inter_600SemiBold" }]}>
+                  Found via {foundProduct.source === "db" ? "Database" : foundProduct.source === "openfoodfacts" ? "Open Food Facts" : "UPCitemDB"}
+                </Text>
               </View>
-              <Text style={[styles.scannedLabel, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>Product detected</Text>
-              <Text style={[styles.scannedName, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>{scannedProduct.name}</Text>
-              <Text style={[styles.scannedMeta, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{scannedProduct.quantity} {scannedProduct.unit} · {scannedProduct.category}</Text>
-              <View style={styles.scannedActions}>
+
+              <Text style={[styles.foundProductName, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+                {foundProduct.name}
+              </Text>
+              {foundProduct.brand && (
+                <Text style={[styles.foundProductBrand, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                  {foundProduct.brand}
+                </Text>
+              )}
+
+              {/* Quantity row */}
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold", marginTop: 16 }]}>Quantity</Text>
+              <View style={styles.qtyRow}>
                 <TouchableOpacity
-                  style={[styles.modalBtn, { backgroundColor: colors.muted }]}
-                  onPress={() => { barcodeScanLock.current = false; setScannedProduct(null); }}
+                  style={[styles.qtyBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setBarcodeQty(q => String(Math.max(1, Number(q) - 1)))}
                 >
+                  <Feather name="minus" size={18} color={colors.primary} />
+                </TouchableOpacity>
+                <TextInput
+                  value={barcodeQty}
+                  onChangeText={setBarcodeQty}
+                  keyboardType="numeric"
+                  style={[styles.qtyInput, { color: colors.foreground, borderColor: colors.border, fontFamily: "Inter_700Bold" }]}
+                />
+                <TouchableOpacity
+                  style={[styles.qtyBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setBarcodeQty(q => String(Number(q) + 1))}
+                >
+                  <Feather name="plus" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Unit */}
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Unit</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitScroll}>
+                {UNITS.map((u) => (
+                  <TouchableOpacity
+                    key={u}
+                    style={[styles.unitPill, { backgroundColor: barcodeUnit === u ? colors.primary : colors.card, borderColor: barcodeUnit === u ? colors.primary : colors.border }]}
+                    onPress={() => setBarcodeUnit(u)}
+                  >
+                    <Text style={[styles.unitPillText, { color: barcodeUnit === u ? "#fff" : colors.foreground, fontFamily: "Inter_500Medium" }]}>{u}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* Category */}
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Category</Text>
+              <View style={styles.categoryGrid}>
+                {CATEGORY_ITEMS.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryPill, { backgroundColor: barcodeCategory === cat ? colors.primary : colors.card, borderColor: barcodeCategory === cat ? colors.primary : colors.border }]}
+                    onPress={() => setBarcodeCategory(cat)}
+                  >
+                    <Text style={[styles.categoryPillText, { color: barcodeCategory === cat ? "#fff" : colors.foreground, fontFamily: "Inter_500Medium" }]}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Expiry date */}
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Expiry Date (optional)</Text>
+              <TextInput
+                style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, fontFamily: "Inter_400Regular" }]}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                value={barcodeExpiry}
+                onChangeText={setBarcodeExpiry}
+              />
+
+              {/* Actions */}
+              <View style={[styles.modalButtons, { marginTop: 8 }]}>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.muted }]} onPress={resetBarcodeModal}>
                   <Text style={[styles.modalBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Scan Again</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.primary }]} onPress={handleAddScanned}>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.primary }]} onPress={handleAddFound}>
                   <Text style={[styles.modalBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Add to Pantry</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </ScrollView>
+          )}
 
-          ) : Platform.OS === "web" ? (
-            /* ── WEB FALLBACK: mock scan ── */
-            <>
-              <View style={[styles.viewfinder, { backgroundColor: "#000" }]}>
-                <View style={styles.viewfinderCorners}>
-                  {(["tl", "tr", "bl", "br"] as const).map((corner) => (
-                    <View key={corner} style={[styles.corner, styles[`corner_${corner}` as keyof typeof styles] as any, { borderColor: colors.primary }]} />
-                  ))}
-                </View>
-                {scanning && <Animated.View style={[styles.scanLine, { backgroundColor: colors.primary, top: scanLineY }]} />}
-                <Text style={[styles.viewfinderText, { color: "#fff", fontFamily: "Inter_400Regular" }]}>
-                  {scanning ? "Scanning..." : "Camera scanning available on device"}
+          {/* ── NOT FOUND PHASE — manual entry form ── */}
+          {barcodePhase === "not_found" && (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.foundContent}>
+              <View style={[styles.notFoundBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={{ fontSize: 36, marginBottom: 8 }}>🔍</Text>
+                <Text style={[styles.notFoundTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                  No product found
+                </Text>
+                <Text style={[styles.notFoundSub, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                  Barcode: {scannedBarcode}
+                </Text>
+                <Text style={[styles.notFoundSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular", marginTop: 4 }]}>
+                  Not in Database, Open Food Facts, or UPCitemDB. Add it manually:
                 </Text>
               </View>
-              <Text style={[styles.scanHint, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                Use the Expo Go app on your phone to scan real barcodes.
+
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold", marginTop: 16 }]}>
+                Product Name *
               </Text>
-              <TouchableOpacity style={[styles.scanStartBtn, { backgroundColor: colors.primary }]} onPress={handleScanStart} disabled={scanning}>
-                <Feather name="camera" size={20} color="#fff" />
-                <Text style={[styles.scanStartText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>{scanning ? "Scanning…" : "Demo Scan"}</Text>
-              </TouchableOpacity>
-            </>
+              <TextInput
+                style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, fontFamily: "Inter_400Regular" }]}
+                placeholder="e.g. Organic Almond Milk"
+                placeholderTextColor={colors.textMuted}
+                value={manualName}
+                onChangeText={setManualName}
+                autoFocus
+              />
 
-          ) : !cameraPermission ? (
-            /* ── PERMISSION LOADING ── */
-            <View style={styles.permissionBox}>
-              <Text style={[styles.permissionText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Checking camera access…</Text>
-            </View>
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Brand</Text>
+              <TextInput
+                style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, fontFamily: "Inter_400Regular" }]}
+                placeholder="e.g. Oatly"
+                placeholderTextColor={colors.textMuted}
+                value={manualBrand}
+                onChangeText={setManualBrand}
+              />
 
-          ) : !cameraPermission.granted ? (
-            /* ── PERMISSION REQUEST ── */
-            <View style={styles.permissionBox}>
-              <View style={[styles.permissionIconWrap, { backgroundColor: colors.primary + "18" }]}>
-                <Feather name="camera" size={36} color={colors.primary} />
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Category</Text>
+              <View style={styles.categoryGrid}>
+                {CATEGORY_ITEMS.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryPill, { backgroundColor: manualCategory === cat ? colors.primary : colors.card, borderColor: manualCategory === cat ? colors.primary : colors.border }]}
+                    onPress={() => setManualCategory(cat)}
+                  >
+                    <Text style={[styles.categoryPillText, { color: manualCategory === cat ? "#fff" : colors.foreground, fontFamily: "Inter_500Medium" }]}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <Text style={[styles.permissionTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Camera Access Needed</Text>
-              <Text style={[styles.permissionText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                Allow PantrySwipe to use your camera so you can scan barcodes to instantly add food items to your pantry.
-              </Text>
-              {cameraPermission.canAskAgain ? (
-                <TouchableOpacity
-                  style={[styles.permissionBtn, { backgroundColor: colors.primary }]}
-                  onPress={requestCameraPermission}
-                >
-                  <Feather name="camera" size={18} color="#fff" />
-                  <Text style={[styles.permissionBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Allow Camera</Text>
+
+              <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Expiry Date (optional)</Text>
+              <TextInput
+                style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, fontFamily: "Inter_400Regular" }]}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                value={manualExpiry}
+                onChangeText={setManualExpiry}
+              />
+
+              <View style={[styles.modalButtons, { marginTop: 8 }]}>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.muted }]} onPress={resetBarcodeModal}>
+                  <Text style={[styles.modalBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Scan Again</Text>
                 </TouchableOpacity>
-              ) : (
+                <TouchableOpacity
+                  style={[styles.modalBtn, { backgroundColor: manualName.trim() ? colors.primary : colors.muted }]}
+                  onPress={handleAddManual}
+                  disabled={!manualName.trim()}
+                >
+                  <Text style={[styles.modalBtnText, { color: manualName.trim() ? "#fff" : colors.textMuted, fontFamily: "Inter_700Bold" }]}>
+                    Add to Pantry
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+
+          {/* ── CAMERA PHASE ── */}
+          {barcodePhase === "camera" && (
+            <>
+              {Platform.OS === "web" ? (
+                /* Web: can't access camera for barcode scanning */
                 <>
-                  <Text style={[styles.permissionDenied, { color: "#EF4444", fontFamily: "Inter_500Medium" }]}>
-                    Camera permission was denied. Open Settings to enable it.
+                  <View style={[styles.viewfinder, { backgroundColor: "#0A0A0A" }]}>
+                    <View style={styles.viewfinderCorners}>
+                      {(["tl", "tr", "bl", "br"] as const).map((corner) => (
+                        <View key={corner} style={[styles.corner, styles[`corner_${corner}` as keyof typeof styles] as any, { borderColor: colors.primary }]} />
+                      ))}
+                    </View>
+                    <Animated.View style={[styles.scanLine, { backgroundColor: colors.primary, top: scanLineY }]} />
+                    <Text style={[styles.viewfinderText, { color: "#aaa", fontFamily: "Inter_400Regular" }]}>
+                      Use Expo Go on your phone to scan real barcodes
+                    </Text>
+                  </View>
+                  <Text style={[styles.scanHint, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                    Tap below to demo a real Open Food Facts lookup.
                   </Text>
                   <TouchableOpacity
-                    style={[styles.permissionBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => { try { Linking.openSettings(); } catch {} }}
+                    style={[styles.scanStartBtn, { backgroundColor: colors.primary }]}
+                    onPress={handleDemoScan}
                   >
-                    <Feather name="settings" size={18} color="#fff" />
-                    <Text style={[styles.permissionBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Open Settings</Text>
+                    <Feather name="zap" size={18} color="#fff" />
+                    <Text style={[styles.scanStartText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>
+                      Demo Scan (Coca-Cola)
+                    </Text>
                   </TouchableOpacity>
                 </>
-              )}
-            </View>
-
-          ) : (
-            /* ── LIVE CAMERA VIEW ── */
-            <View style={styles.cameraWrapper}>
-              <CameraView
-                style={StyleSheet.absoluteFillObject}
-                facing="back"
-                onBarcodeScanned={handleBarcodeScanned}
-                barcodeScannerSettings={{
-                  barcodeTypes: ["qr", "ean13", "ean8", "code128", "upc_a", "upc_e", "code39"],
-                }}
-              />
-              {/* Corner brackets overlay */}
-              <View style={styles.cameraOverlay}>
-                <View style={styles.viewfinderCorners}>
-                  {(["tl", "tr", "bl", "br"] as const).map((corner) => (
-                    <View key={corner} style={[styles.corner, styles[`corner_${corner}` as keyof typeof styles] as any, { borderColor: "#fff" }]} />
-                  ))}
+              ) : !cameraPermission ? (
+                <View style={styles.permissionBox}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={[styles.permissionText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                    Checking camera access…
+                  </Text>
                 </View>
-                <Animated.View style={[styles.scanLine, { backgroundColor: "rgba(255,255,255,0.7)", top: scanLineY }]} />
-              </View>
-              <Text style={[styles.cameraHintText, { fontFamily: "Inter_500Medium" }]}>
-                Point camera at a barcode
-              </Text>
-            </View>
+              ) : !cameraPermission.granted ? (
+                <View style={styles.permissionBox}>
+                  <View style={[styles.permissionIconWrap, { backgroundColor: colors.primary + "18" }]}>
+                    <Feather name="camera" size={36} color={colors.primary} />
+                  </View>
+                  <Text style={[styles.permissionTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+                    Camera Access Needed
+                  </Text>
+                  <Text style={[styles.permissionText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                    Allow PantrySwipe to use your camera so you can scan barcodes to instantly add food items to your pantry.
+                  </Text>
+                  {cameraPermission.canAskAgain ? (
+                    <TouchableOpacity style={[styles.permissionBtn, { backgroundColor: colors.primary }]} onPress={requestCameraPermission}>
+                      <Feather name="camera" size={18} color="#fff" />
+                      <Text style={[styles.permissionBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Allow Camera</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <Text style={[styles.permissionDenied, { color: "#EF4444", fontFamily: "Inter_500Medium" }]}>
+                        Camera permission was denied. Open Settings to enable it.
+                      </Text>
+                      <TouchableOpacity style={[styles.permissionBtn, { backgroundColor: colors.primary }]} onPress={() => { try { Linking.openSettings(); } catch {} }}>
+                        <Feather name="settings" size={18} color="#fff" />
+                        <Text style={[styles.permissionBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Open Settings</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.cameraWrapper}>
+                  <CameraView
+                    style={StyleSheet.absoluteFillObject}
+                    facing="back"
+                    onBarcodeScanned={handleBarcodeScanned}
+                    barcodeScannerSettings={{
+                      barcodeTypes: ["qr", "ean13", "ean8", "code128", "upc_a", "upc_e", "code39"],
+                    }}
+                  />
+                  <View style={styles.cameraOverlay}>
+                    <View style={styles.viewfinderCorners}>
+                      {(["tl", "tr", "bl", "br"] as const).map((corner) => (
+                        <View key={corner} style={[styles.corner, styles[`corner_${corner}` as keyof typeof styles] as any, { borderColor: "#fff" }]} />
+                      ))}
+                    </View>
+                    <Animated.View style={[styles.scanLine, { backgroundColor: "rgba(255,255,255,0.7)", top: scanLineY }]} />
+                  </View>
+                  <Text style={[styles.cameraHintText, { fontFamily: "Inter_500Medium" }]}>
+                    Point camera at a barcode
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
       </Modal>
@@ -725,11 +994,8 @@ export default function PantryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingBottom: 12,
   },
   headerTitle: { fontSize: 26, letterSpacing: -0.3 },
   headerSub: { fontSize: 13, marginTop: 2 },
@@ -757,37 +1023,22 @@ const styles = StyleSheet.create({
   },
   expiryAlertText: { flex: 1, fontSize: 13, color: "#EF4444" },
   expiryViewLink: { fontSize: 13 },
-  categoriesContainer: {
-    paddingHorizontal: 16, gap: 8, paddingBottom: 10,
-    alignItems: "center", height: 50,
-  },
-  categoryTab: {
-    height: 34, paddingHorizontal: 16, borderRadius: 999,
-    borderWidth: 1, alignItems: "center", justifyContent: "center",
-  },
+  categoriesContainer: { paddingHorizontal: 16, gap: 8, paddingBottom: 10, alignItems: "center", height: 50 },
+  categoryTab: { height: 34, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   categoryTabText: { fontSize: 13 },
   listContent: { paddingHorizontal: 16, gap: 10, paddingBottom: 16 },
   pantryItem: {
-    flexDirection: "row", alignItems: "center",
-    padding: 12, paddingRight: 14,
+    flexDirection: "row", alignItems: "center", padding: 12, paddingRight: 14,
     borderRadius: 16, borderWidth: 1, gap: 12, minHeight: 70,
-    shadowColor: "#2B7FFF",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
+    shadowColor: "#2B7FFF", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
-  itemIconBox: {
-    width: 48, height: 48, minWidth: 48,
-    borderRadius: 12, alignItems: "center", justifyContent: "center",
-  },
+  itemIconBox: { width: 48, height: 48, minWidth: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   itemEmoji: { fontSize: 24 },
   itemInfo: { flex: 1, gap: 3, overflow: "hidden" },
   itemName: { fontSize: 15 },
   itemDetail: { fontSize: 12 },
   itemRight: { alignItems: "flex-end", gap: 8, minWidth: 82 },
-  statusBadge: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
-  },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11 },
   emptyState: { alignItems: "center", paddingVertical: 48, gap: 12 },
@@ -800,69 +1051,26 @@ const styles = StyleSheet.create({
   intelligenceRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   intelligenceIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   intelligenceText: { flex: 1, fontSize: 13, lineHeight: 19 },
-
-  // ── Sticky panel — explicit height so PANEL_H constant stays exact ──
-  stickyPanel: {
-    height: 80,
-    borderTopWidth: 1,
-    paddingHorizontal: 16,
-    justifyContent: "center",
-  },
-  stickyPanelBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
+  stickyPanel: { height: 80, borderTopWidth: 1, paddingHorizontal: 16, justifyContent: "center" },
+  stickyPanelBtn: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10 },
   stickyPanelTitle: { fontSize: 15 },
   stickyPanelSub: { fontSize: 12, marginTop: 1 },
-  stickyChevron: {
-    width: 30, height: 30, borderRadius: 15,
-    alignItems: "center", justifyContent: "center",
-  },
-
-  // ── Bottom sheet ──
-  sheetOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end",
-  },
-  sheet: {
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    maxHeight: SCREEN_HEIGHT * 0.65, paddingTop: 12,
-    shadowColor: "#000", shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
-  },
-  sheetHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    alignSelf: "center", marginBottom: 16,
-  },
-  sheetHeader: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    paddingHorizontal: 20, paddingBottom: 14,
-  },
+  stickyChevron: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: SCREEN_HEIGHT * 0.65, paddingTop: 12, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 20 },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingBottom: 14 },
   sheetTitle: { fontSize: 18 },
   sheetCountPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   sheetCountText: { fontSize: 12 },
   sheetGroup: { paddingHorizontal: 16, marginBottom: 4 },
-  sheetGroupLabel: {
-    fontSize: 11, letterSpacing: 0.5,
-    textTransform: "uppercase", marginBottom: 8, marginTop: 12,
-  },
-  sheetRow: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    borderRadius: 14, padding: 12, marginBottom: 8,
-  },
-  sheetRowIcon: {
-    width: 40, height: 40, borderRadius: 10,
-    alignItems: "center", justifyContent: "center",
-  },
+  sheetGroupLabel: { fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 8, marginTop: 12 },
+  sheetRow: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, padding: 12, marginBottom: 8 },
+  sheetRowIcon: { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   sheetRowName: { fontSize: 14, marginBottom: 2 },
   sheetRowMeta: { fontSize: 12, lineHeight: 16 },
   sheetScore: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   sheetScoreText: { fontSize: 12 },
-
-  // ── Modals ──
   modal: { flex: 1, padding: 24 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
   modalTitle: { fontSize: 22, marginBottom: 20 },
@@ -873,7 +1081,7 @@ const styles = StyleSheet.create({
   unitScroll: { gap: 8, paddingRight: 8, height: 48, alignItems: "center" },
   unitPill: { height: 34, paddingHorizontal: 14, borderRadius: 100, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   unitPillText: { fontSize: 13 },
-  categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
   categoryPill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100, borderWidth: 1 },
   categoryPillText: { fontSize: 13 },
   modalButtons: { flexDirection: "row", gap: 12, marginTop: 16 },
@@ -883,11 +1091,35 @@ const styles = StyleSheet.create({
   expiryItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1 },
   expiryHint: { fontSize: 13, marginTop: 8 },
   expiryRecipe: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1 },
-  viewfinder: {
-    height: 220, borderRadius: 16, marginBottom: 16,
-    position: "relative", alignItems: "center", justifyContent: "flex-end",
-    overflow: "hidden", paddingBottom: 16,
-  },
+
+  // ── Barcode modal ──
+  barcodeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  barcodeCloseBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+
+  // Loading
+  loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 60 },
+  loadingStatus: { fontSize: 16, marginBottom: 8 },
+  loadingBarcode: { fontSize: 12 },
+
+  // Found
+  foundContent: { gap: 0, paddingBottom: 32 },
+  productImage: { width: "100%", height: 180, borderRadius: 16, marginBottom: 16 },
+  productImagePlaceholder: { width: "100%", height: 140, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 16, borderWidth: 1 },
+  sourceBadge: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, marginBottom: 12 },
+  sourceBadgeText: { fontSize: 12 },
+  foundProductName: { fontSize: 22, marginBottom: 4 },
+  foundProductBrand: { fontSize: 14, marginBottom: 4 },
+  qtyRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+  qtyBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  qtyInput: { flex: 1, height: 44, borderRadius: 12, borderWidth: 1.5, textAlign: "center", fontSize: 18 },
+
+  // Not found
+  notFoundBox: { padding: 20, borderRadius: 16, borderWidth: 1, alignItems: "center", marginBottom: 8 },
+  notFoundTitle: { fontSize: 16, marginBottom: 4 },
+  notFoundSub: { fontSize: 12, textAlign: "center" },
+
+  // Camera
+  viewfinder: { height: 220, borderRadius: 16, marginBottom: 16, position: "relative", alignItems: "center", justifyContent: "flex-end", overflow: "hidden", paddingBottom: 16 },
   viewfinderCorners: { position: "absolute", top: 16, left: 16, right: 16, bottom: 16 },
   corner: { position: "absolute", width: 24, height: 24, borderWidth: 3 },
   corner_tl: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
@@ -897,46 +1129,18 @@ const styles = StyleSheet.create({
   scanLine: { position: "absolute", left: 16, right: 16, height: 2, opacity: 0.8 },
   viewfinderText: { fontSize: 13, opacity: 0.7 },
   scanHint: { fontSize: 13, lineHeight: 19, marginBottom: 20 },
-  scanStartBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, height: 52, borderRadius: 100 },
-  scanStartText: { fontSize: 16 },
-  scannedResult: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  scannedIcon: { width: 100, height: 100, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  scannedLabel: { fontSize: 13 },
-  scannedName: { fontSize: 24, textAlign: "center" },
-  scannedMeta: { fontSize: 14 },
-  scannedActions: { flexDirection: "row", gap: 12, marginTop: 16, width: "100%" },
+  scanStartBtn: { flexDirection: "row", gap: 10, height: 52, borderRadius: 100, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+  scanStartText: { fontSize: 15 },
+  cameraWrapper: { flex: 1, borderRadius: 16, overflow: "hidden", position: "relative", minHeight: 300 },
+  cameraOverlay: { position: "absolute", top: 16, left: 16, right: 16, bottom: 40 },
+  cameraHintText: { position: "absolute", bottom: 16, left: 0, right: 0, textAlign: "center", color: "#fff", fontSize: 14 },
 
-  // ── Camera & permissions ──
-  cameraWrapper: {
-    flex: 1, borderRadius: 16, overflow: "hidden",
-    marginBottom: 16, position: "relative",
-    minHeight: 320,
-  },
-  cameraOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center", justifyContent: "center",
-  },
-  cameraHintText: {
-    position: "absolute", bottom: 20,
-    alignSelf: "center",
-    color: "#fff", fontSize: 14,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    paddingHorizontal: 16, paddingVertical: 6, borderRadius: 100,
-  },
-  permissionBox: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-    gap: 16, paddingHorizontal: 8,
-  },
-  permissionIconWrap: {
-    width: 80, height: 80, borderRadius: 24,
-    alignItems: "center", justifyContent: "center", marginBottom: 4,
-  },
+  // Permission
+  permissionBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 8, paddingBottom: 40 },
+  permissionIconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center" },
   permissionTitle: { fontSize: 22, textAlign: "center" },
   permissionText: { fontSize: 14, lineHeight: 21, textAlign: "center" },
-  permissionDenied: { fontSize: 13, textAlign: "center", lineHeight: 20 },
-  permissionBtn: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    height: 52, paddingHorizontal: 28, borderRadius: 100, marginTop: 4,
-  },
-  permissionBtnText: { fontSize: 16 },
+  permissionDenied: { fontSize: 13, textAlign: "center" },
+  permissionBtn: { flexDirection: "row", gap: 8, height: 52, borderRadius: 100, alignItems: "center", justifyContent: "center", paddingHorizontal: 28, marginTop: 4 },
+  permissionBtnText: { fontSize: 15 },
 });
