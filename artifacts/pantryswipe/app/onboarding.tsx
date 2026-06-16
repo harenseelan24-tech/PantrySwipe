@@ -38,6 +38,18 @@ const CUISINES = [
   { name: "Malaysian", flag: "🇲🇾" },
 ];
 
+const PROFANITY_LIST = [
+  "fuck", "shit", "ass", "bitch", "bastard", "crap", "piss", "cock", "dick",
+  "cunt", "whore", "slut", "nigger", "nigga", "faggot", "fag", "retard",
+  "asshole", "motherfucker", "bullshit", "dumbass", "jackass", "dipshit",
+  "wanker", "twat", "arsehole", "tosser", "bollocks",
+];
+
+function containsProfanity(text: string): boolean {
+  const lower = text.toLowerCase().replace(/[^a-z]/g, "");
+  return PROFANITY_LIST.some((word) => lower.includes(word));
+}
+
 export default function OnboardingScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -47,6 +59,7 @@ export default function OnboardingScreen() {
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
+  const [nameError, setNameError] = useState("");
   const [skillLevel, setSkillLevel] = useState("Home Cook");
   const [dietTypes, setDietTypes] = useState<string[]>(["Omnivore"]);
   const [allergies, setAllergies] = useState<string[]>([]);
@@ -59,6 +72,16 @@ export default function OnboardingScreen() {
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
 
   const goNext = () => {
+    // Validate name on step 0
+    if (step === 0) {
+      const trimmed = name.trim();
+      if (trimmed && containsProfanity(trimmed)) {
+        setNameError("Please choose an appropriate name 🙂");
+        return;
+      }
+      setNameError("");
+    }
+
     if (step < TOTAL_STEPS - 1) {
       Animated.timing(slideAnim, {
         toValue: -(step + 1) * width,
@@ -68,7 +91,7 @@ export default function OnboardingScreen() {
       setStep(step + 1);
     } else {
       updateProfile({
-        name: name || "Alex",
+        name: name.trim() || "Alex",
         skillLevel,
         dietType: dietTypes,
         allergies,
@@ -144,14 +167,30 @@ export default function OnboardingScreen() {
             We'll personalize your experience
           </Text>
           <TextInput
-            style={[styles.nameInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+            style={[
+              styles.nameInput,
+              {
+                color: colors.foreground,
+                borderColor: nameError ? colors.destructive : colors.border,
+                backgroundColor: colors.card,
+              },
+            ]}
             placeholder="Your first name"
             placeholderTextColor={colors.mutedForeground}
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => {
+              setName(text);
+              if (nameError) setNameError("");
+            }}
             autoCapitalize="words"
             returnKeyType="done"
           />
+          {nameError ? (
+            <View style={styles.errorRow}>
+              <Feather name="alert-circle" size={14} color={colors.destructive} />
+              <Text style={[styles.errorText, { color: colors.destructive }]}>{nameError}</Text>
+            </View>
+          ) : null}
           <Text style={[styles.label, { color: colors.foreground }]}>Household size</Text>
           <View style={styles.stepper}>
             <TouchableOpacity
@@ -466,7 +505,17 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     paddingHorizontal: 16,
     fontSize: 17,
-    marginBottom: 28,
+    marginBottom: 8,
+    fontWeight: "500",
+  },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 20,
+  },
+  errorText: {
+    fontSize: 13,
     fontWeight: "500",
   },
   stepper: {

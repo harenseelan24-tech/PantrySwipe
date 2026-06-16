@@ -94,7 +94,7 @@ export default function SocialScreen() {
     const postComments = comments[item.id] || [];
 
     return (
-      <View style={[styles.postCard, { backgroundColor: colors.card }]}>
+      <View style={[styles.postCard, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
         {/* Header */}
         <View style={styles.postHeader}>
           <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
@@ -196,7 +196,6 @@ export default function SocialScreen() {
         renderItem={renderPost}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
       />
 
       {/* Share toast */}
@@ -272,17 +271,17 @@ const styles = StyleSheet.create({
   cuisineFilters: { paddingHorizontal: 20, gap: 8, paddingVertical: 10, alignItems: "center", height: 50 },
   cuisineFilter: { height: 30, paddingHorizontal: 14, borderRadius: 100, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   cuisineFilterText: { fontSize: 12 },
-  feedContent: { paddingBottom: 100 },
-  postCard: { borderRadius: 0 },
-  postHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  feedContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 100, gap: 16 },
+  postCard: { borderRadius: 18, overflow: "hidden" },
+  postHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
   userAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   userAvatarText: { color: "#fff", fontSize: 15 },
   username: { fontSize: 14 },
   timeAgo: { fontSize: 12 },
   followBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 100, borderWidth: 1.5 },
   followBtnText: { fontSize: 13 },
-  postImage: { width: "100%", aspectRatio: 1 },
-  postImagePlaceholder: { width: "100%", aspectRatio: 1, alignItems: "center", justifyContent: "center" },
+  postImage: { width: "100%", aspectRatio: 4 / 5 },
+  postImagePlaceholder: { width: "100%", aspectRatio: 4 / 5, alignItems: "center", justifyContent: "center" },
   actionsRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, gap: 18 },
   actionItem: { flexDirection: "row", alignItems: "center", gap: 5 },
   actionCount: { fontSize: 14 },

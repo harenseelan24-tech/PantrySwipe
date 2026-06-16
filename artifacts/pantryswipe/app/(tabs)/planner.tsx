@@ -24,18 +24,18 @@ const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAYS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MEALS: MealType[] = ["Breakfast", "Lunch", "Dinner"];
 const MEAL_ICONS: Record<MealType, string> = { Breakfast: "sun", Lunch: "clock", Dinner: "moon" };
+const MEAL_EMOJI: Record<MealType, string> = { Breakfast: "🌅", Lunch: "☀️", Dinner: "🌙" };
 
-const SAMPLE_PLAN: MealPlan = {
-  Mon: { Breakfast: "10", Lunch: "3", Dinner: "1" },
-  Tue: { Breakfast: null, Lunch: "5", Dinner: "2" },
-  Wed: { Breakfast: "8", Lunch: null, Dinner: "4" },
-  Thu: { Breakfast: null, Lunch: "3", Dinner: "6" },
-  Fri: { Breakfast: "10", Lunch: "5", Dinner: "7" },
-  Sat: { Breakfast: null, Lunch: null, Dinner: "9" },
-  Sun: { Breakfast: "8", Lunch: "3", Dinner: "1" },
+const EMPTY_PLAN: MealPlan = {
+  Mon: { Breakfast: null, Lunch: null, Dinner: null },
+  Tue: { Breakfast: null, Lunch: null, Dinner: null },
+  Wed: { Breakfast: null, Lunch: null, Dinner: null },
+  Thu: { Breakfast: null, Lunch: null, Dinner: null },
+  Fri: { Breakfast: null, Lunch: null, Dinner: null },
+  Sat: { Breakfast: null, Lunch: null, Dinner: null },
+  Sun: { Breakfast: null, Lunch: null, Dinner: null },
 };
 
-// Get week dates starting from a given offset (0 = current week)
 function getWeekDates(weekOffset: number) {
   const today = new Date();
   const dow = today.getDay();
@@ -57,10 +57,10 @@ export default function PlannerScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { pantryItems } = useApp();
+  const { pantryItems, cookedRecipes } = useApp();
 
   const [view, setView] = useState<ViewType>("Week");
-  const [mealPlan, setMealPlan] = useState<MealPlan>(SAMPLE_PLAN);
+  const [mealPlan, setMealPlan] = useState<MealPlan>(EMPTY_PLAN);
   const [generating, setGenerating] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [activeMealType, setActiveMealType] = useState<MealType | null>(null);
@@ -70,21 +70,27 @@ export default function PlannerScreen() {
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const weekDates = getWeekDates(weekOffset);
 
-  // Stats derived from mealPlan
-  const { totalCalories, totalMeals, estCost } = useMemo(() => {
-    let cals = 0, meals = 0;
-    Object.values(mealPlan).forEach((day) => {
-      Object.values(day).forEach((id) => {
-        if (id) {
-          const r = MOCK_RECIPES.find((r) => r.id === id);
-          if (r) { cals += r.calories; meals++; }
-        }
-      });
+  // Stats from actual cooked/recorded meals (not the plan)
+  const { cookedKcalPerDay, totalCookedMeals } = useMemo(() => {
+    let cals = 0;
+    cookedRecipes.forEach((id) => {
+      const r = MOCK_RECIPES.find((r) => r.id === id);
+      if (r) cals += r.calories;
     });
-    return { totalCalories: cals, totalMeals: meals, estCost: Math.round(meals * 4.5) };
+    return {
+      cookedKcalPerDay: cookedRecipes.length > 0 ? Math.round(cals / 7) : 0,
+      totalCookedMeals: cookedRecipes.length,
+    };
+  }, [cookedRecipes]);
+
+  // Count planned meals in current plan
+  const plannedCount = useMemo(() => {
+    let count = 0;
+    Object.values(mealPlan).forEach((day) => Object.values(day).forEach((id) => { if (id) count++; }));
+    return count;
   }, [mealPlan]);
 
-  const kcalPerDay = totalMeals > 0 ? Math.round(totalCalories / 7) : 0;
+  const isPlanEmpty = plannedCount === 0;
 
   // Shopping list: ingredients from plan not in pantry
   const shoppingList = useMemo(() => {
@@ -130,10 +136,7 @@ export default function PlannerScreen() {
 
   const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
   const todayKey = DAYS_SHORT[todayIndex] || "Mon";
-
   const selectedRecipe = selectedMeal ? MOCK_RECIPES.find((r) => r.id === selectedMeal.recipeId) : null;
-
-  const filteredDays = activeMealType ? DAYS_SHORT : DAYS_SHORT;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -180,19 +183,25 @@ export default function PlannerScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
+        {/* Stats — based on what you've actually eaten/recorded */}
         <View style={styles.summaryRow}>
-          {[
-            { icon: "zap", value: `${kcalPerDay}`, label: "kcal/day", color: colors.primary },
-            { icon: "dollar-sign", value: `$${estCost}`, label: "est. cost", color: "#00BFA5" },
-            { icon: "check-circle", value: `${totalMeals}`, label: "meals planned", color: colors.saveBlue },
-          ].map((s) => (
-            <View key={s.label} style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Feather name={s.icon as any} size={16} color={s.color} />
-              <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{s.value}</Text>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{s.label}</Text>
-            </View>
-          ))}
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Feather name="zap" size={16} color={colors.primary} />
+            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
+              {cookedKcalPerDay > 0 ? cookedKcalPerDay : "—"}
+            </Text>
+            <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>kcal/day</Text>
+          </View>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Feather name="check-circle" size={16} color={colors.saveBlue} />
+            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{totalCookedMeals}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>meals cooked</Text>
+          </View>
+          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Feather name="calendar" size={16} color={colors.herbGreen || "#4CAF76"} />
+            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{plannedCount}</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>this week</Text>
+          </View>
         </View>
 
         {/* Meal type filter pills */}
@@ -205,7 +214,7 @@ export default function PlannerScreen() {
                 style={[styles.mealTypePill, { backgroundColor: isActive ? colors.primary : colors.card, borderColor: isActive ? colors.primary : colors.border }]}
                 onPress={() => { setActiveMealType(isActive ? null : meal); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
               >
-                <Feather name={MEAL_ICONS[meal] as any} size={13} color={isActive ? colors.primaryForeground : colors.textSecondary} />
+                <Text style={{ fontSize: 13 }}>{MEAL_EMOJI[meal]}</Text>
                 <Text style={[styles.mealTypePillText, { color: isActive ? colors.primaryForeground : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" }]}>{meal}</Text>
               </TouchableOpacity>
             );
@@ -223,21 +232,21 @@ export default function PlannerScreen() {
                 <TouchableOpacity
                   key={meal}
                   style={[styles.dayMealRow, { backgroundColor: colors.card, borderColor: recipe ? colors.primary + "50" : colors.border }]}
-                  onPress={() => { if (recipe) setSelectedMeal({ day: todayKey, meal, recipeId }); }}
+                  onPress={() => { if (recipe) setSelectedMeal({ day: todayKey, meal, recipeId: recipeId! }); }}
                 >
                   <View style={[styles.dayMealIcon, { backgroundColor: colors.primary + "15" }]}>
-                    <Feather name={MEAL_ICONS[meal] as any} size={16} color={colors.primary} />
+                    <Text style={{ fontSize: 16 }}>{MEAL_EMOJI[meal]}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.dayMealType, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>{meal}</Text>
                     {recipe ? (
                       <Text style={[styles.dayMealName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>{recipe.title}</Text>
                     ) : (
-                      <Text style={[styles.dayMealEmpty, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Not planned</Text>
+                      <Text style={[styles.dayMealEmpty, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Tap Auto-Fill or add manually</Text>
                     )}
                   </View>
                   {recipe && <Text style={[styles.dayMealCals, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal</Text>}
-                  {recipe && <Feather name="chevron-right" size={16} color={colors.textMuted} />}
+                  {recipe ? <Feather name="chevron-right" size={16} color={colors.textMuted} /> : <Feather name="plus-circle" size={18} color={colors.textMuted} />}
                 </TouchableOpacity>
               );
             })}
@@ -247,52 +256,79 @@ export default function PlannerScreen() {
         {/* ── WEEK VIEW ── */}
         {view === "Week" && (
           <>
-            <View style={styles.grid}>
-              {filteredDays.map((day, dayIdx) => (
-                <View key={day} style={styles.dayColumn}>
-                  <View style={[styles.dayHeader, { backgroundColor: day === todayKey ? colors.primary : "transparent" }]}>
-                    <Text style={[styles.dayLabel, { color: day === todayKey ? colors.primaryForeground : colors.textSecondary, fontFamily: "Inter_600SemiBold" }]}>{day}</Text>
-                    <Text style={[styles.dayDate, { color: day === todayKey ? colors.primaryForeground : colors.textMuted, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
-                      {weekDates[dayIdx]?.getDate()}
-                    </Text>
-                  </View>
-                  {(activeMealType ? [activeMealType] : MEALS).map((meal) => {
-                    const recipeId = mealPlan[day]?.[meal];
-                    const recipe = recipeId ? MOCK_RECIPES.find((r) => r.id === recipeId) : null;
-                    return (
-                      <TouchableOpacity
-                        key={meal}
-                        style={[styles.mealCell, { backgroundColor: recipe ? colors.primary + "12" : colors.card, borderColor: recipe ? colors.primary + "40" : colors.border }]}
-                        onPress={() => recipe ? setSelectedMeal({ day, meal, recipeId }) : undefined}
-                        onLongPress={() => recipe ? removeFromPlan(day, meal) : undefined}
-                      >
-                        {recipe ? (
-                          <>
-                            <Text style={[styles.mealRecipeName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
-                            <Text style={[styles.mealCalories, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories}</Text>
-                          </>
-                        ) : (
-                          <Feather name="plus" size={14} color={colors.textMuted} />
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
+            {/* New user empty state */}
+            {isPlanEmpty && (
+              <View style={[styles.emptyState, { backgroundColor: colors.primary + "0D", borderColor: colors.primary + "30" }]}>
+                <Text style={styles.emptyStateEmoji}>🗓️</Text>
+                <Text style={[styles.emptyStateTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Your week is wide open</Text>
+                <Text style={[styles.emptyStateText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                  Hit <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>Auto-Fill</Text> above and we'll build a full week of meals from your pantry — then generate a shopping list for anything you're missing.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.emptyStateCTA, { backgroundColor: colors.primary }]}
+                  onPress={handleGenerate}
+                  disabled={generating}
+                >
+                  <Feather name="zap" size={15} color="#fff" />
+                  <Text style={[styles.emptyStateCTAText, { fontFamily: "Inter_700Bold" }]}>
+                    {generating ? "Generating…" : "Auto-Fill My Week"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {!isPlanEmpty && (
+              <>
+                <View style={styles.grid}>
+                  {DAYS_SHORT.map((day, dayIdx) => (
+                    <View key={day} style={styles.dayColumn}>
+                      <View style={[styles.dayHeader, { backgroundColor: day === todayKey ? colors.primary : "transparent" }]}>
+                        <Text style={[styles.dayLabel, { color: day === todayKey ? colors.primaryForeground : colors.textSecondary, fontFamily: "Inter_600SemiBold" }]}>{day}</Text>
+                        <Text style={[styles.dayDate, { color: day === todayKey ? colors.primaryForeground : colors.textMuted, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
+                          {weekDates[dayIdx]?.getDate()}
+                        </Text>
+                      </View>
+                      {(activeMealType ? [activeMealType] : MEALS).map((meal) => {
+                        const recipeId = mealPlan[day]?.[meal];
+                        const recipe = recipeId ? MOCK_RECIPES.find((r) => r.id === recipeId) : null;
+                        return (
+                          <TouchableOpacity
+                            key={meal}
+                            style={[styles.mealCell, { backgroundColor: recipe ? colors.primary + "12" : colors.card, borderColor: recipe ? colors.primary + "40" : colors.border }]}
+                            onPress={() => recipe ? setSelectedMeal({ day, meal, recipeId: recipeId! }) : undefined}
+                            onLongPress={() => recipe ? removeFromPlan(day, meal) : undefined}
+                          >
+                            {recipe ? (
+                              <>
+                                <Text style={{ fontSize: 10 }}>{MEAL_EMOJI[meal]}</Text>
+                                <Text style={[styles.mealRecipeName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
+                                <Text style={[styles.mealCalories, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories}</Text>
+                              </>
+                            ) : (
+                              <Feather name="plus" size={14} color={colors.textMuted} />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-            <Text style={[styles.gridHint, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Tap a meal to view · long-press to remove</Text>
+                <Text style={[styles.gridHint, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Tap a meal to view · long-press to remove</Text>
+              </>
+            )}
           </>
         )}
 
         {/* ── MONTH VIEW ── */}
         {view === "Month" && (
           <View style={styles.monthView}>
-            <Text style={[styles.monthTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>June 2026</Text>
+            <Text style={[styles.monthTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+              {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            </Text>
             <View style={styles.monthGrid}>
               {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
                 <Text key={i} style={[styles.monthDayHeader, { color: colors.textMuted, fontFamily: "Inter_600SemiBold" }]}>{d}</Text>
               ))}
-              {/* Placeholder offset + days */}
               {[...Array(1)].map((_, i) => <View key={`empty-${i}`} style={styles.monthCell} />)}
               {[...Array(30)].map((_, i) => {
                 const dayNum = i + 1;
@@ -316,15 +352,16 @@ export default function PlannerScreen() {
           style={[styles.shoppingCTA, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowShoppingList(true); }}
         >
+          <View style={[styles.shoppingCTAIcon, { backgroundColor: colors.primary + "15" }]}>
+            <Feather name="shopping-cart" size={22} color={colors.primary} />
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.shoppingCTATitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Generate Shopping List</Text>
+            <Text style={[styles.shoppingCTATitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Shopping List</Text>
             <Text style={[styles.shoppingCTASub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              {shoppingList.length} item{shoppingList.length !== 1 ? "s" : ""} needed from your meal plan
+              {shoppingList.length > 0 ? `${shoppingList.length} item${shoppingList.length !== 1 ? "s" : ""} needed from your plan` : "Everything's in your pantry!"}
             </Text>
           </View>
-          <View style={[styles.shoppingCTABtn, { backgroundColor: colors.primary }]}>
-            <Feather name="shopping-cart" size={18} color={colors.primaryForeground} />
-          </View>
+          <Feather name="chevron-right" size={18} color={colors.textMuted} />
         </TouchableOpacity>
       </ScrollView>
 
@@ -420,57 +457,71 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
   summaryCard: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 14, borderWidth: 1, gap: 3 },
   summaryValue: { fontSize: 18 },
-  summaryLabel: { fontSize: 10 },
+  summaryLabel: { fontSize: 10, textAlign: "center" },
   mealTypeRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
   mealTypePill: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderRadius: 12, borderWidth: 1 },
   mealTypePillText: { fontSize: 12 },
+
+  // Empty state
+  emptyState: { borderRadius: 18, borderWidth: 1, padding: 24, alignItems: "center", gap: 10, marginBottom: 16 },
+  emptyStateEmoji: { fontSize: 44 },
+  emptyStateTitle: { fontSize: 20, letterSpacing: -0.3 },
+  emptyStateText: { fontSize: 14, lineHeight: 21, textAlign: "center" },
+  emptyStateCTA: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 13, borderRadius: 100, marginTop: 4 },
+  emptyStateCTAText: { color: "#fff", fontSize: 15 },
+
   grid: { flexDirection: "row", gap: 5, marginBottom: 8 },
   dayColumn: { flex: 1, gap: 4 },
   dayHeader: { borderRadius: 8, paddingVertical: 5, alignItems: "center", marginBottom: 2 },
   dayLabel: { fontSize: 10, textTransform: "uppercase" },
   dayDate: { fontSize: 13, marginTop: 1 },
-  mealCell: { height: 68, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 5, gap: 2 },
+  mealCell: { height: 72, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 4, gap: 2 },
   mealRecipeName: { fontSize: 8, textAlign: "center", lineHeight: 11 },
   mealCalories: { fontSize: 8, textAlign: "center" },
   gridHint: { fontSize: 11, textAlign: "center", marginBottom: 16 },
+
   dayView: { gap: 10, marginBottom: 16 },
   dayViewTitle: { fontSize: 20, marginBottom: 4 },
   dayMealRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1 },
-  dayMealIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  dayMealType: { fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 },
-  dayMealName: { fontSize: 15, marginTop: 2 },
-  dayMealEmpty: { fontSize: 14, marginTop: 2 },
+  dayMealIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  dayMealType: { fontSize: 12 },
+  dayMealName: { fontSize: 15 },
+  dayMealEmpty: { fontSize: 13 },
   dayMealCals: { fontSize: 13 },
-  monthView: { gap: 12 },
-  monthTitle: { fontSize: 20 },
+
+  monthView: { marginBottom: 16 },
+  monthTitle: { fontSize: 22, marginBottom: 12 },
   monthGrid: { flexDirection: "row", flexWrap: "wrap" },
-  monthDayHeader: { width: "14.28%", textAlign: "center", fontSize: 11, paddingVertical: 6 },
-  monthCell: { width: "14.28%", alignItems: "center", paddingVertical: 8, gap: 3 },
+  monthDayHeader: { width: "14.28%", textAlign: "center", fontSize: 12, paddingVertical: 6 },
+  monthCell: { width: "14.28%", aspectRatio: 1, alignItems: "center", justifyContent: "center", gap: 2 },
   monthDayNum: { fontSize: 13 },
-  monthDot: { width: 5, height: 5, borderRadius: 2.5 },
-  shoppingCTA: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1, gap: 12, marginTop: 8 },
+  monthDot: { width: 4, height: 4, borderRadius: 2 },
+
+  shoppingCTA: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 16, borderWidth: 1, marginTop: 8 },
+  shoppingCTAIcon: { width: 48, height: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   shoppingCTATitle: { fontSize: 15 },
   shoppingCTASub: { fontSize: 13, marginTop: 2 },
-  shoppingCTABtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+
   modal: { flex: 1, padding: 24 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  modalTitle: { fontSize: 22, marginBottom: 4 },
-  modalBtnFull: { height: 52, borderRadius: 100, alignItems: "center", justifyContent: "center", marginTop: 16 },
-  modalBtnText: { fontSize: 15 },
-  mealDetailMealType: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
-  mealDetailTitle: { fontSize: 26, letterSpacing: -0.3, marginBottom: 16 },
+  modalTitle: { fontSize: 24, letterSpacing: -0.3, marginBottom: 6 },
+  mealDetailMealType: { fontSize: 13, marginBottom: 4 },
+  mealDetailTitle: { fontSize: 26, letterSpacing: -0.4, marginBottom: 18 },
   mealDetailStats: { flexDirection: "row", gap: 10, marginBottom: 24 },
-  mealDetailStat: { flex: 1, alignItems: "center", gap: 4, padding: 12, borderRadius: 12, borderWidth: 1 },
-  mealDetailStatVal: { fontSize: 16 },
+  mealDetailStat: { flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1, gap: 4 },
+  mealDetailStatVal: { fontSize: 17 },
   mealDetailStatLabel: { fontSize: 11 },
   mealDetailBtns: { flexDirection: "row", gap: 12 },
-  mealDetailBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, height: 52, borderRadius: 100 },
+  mealDetailBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14 },
   mealDetailBtnText: { fontSize: 15 },
+
   shoppingSubtitle: { fontSize: 14, marginBottom: 16 },
-  shoppingItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1 },
-  shoppingCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2 },
-  shoppingItemName: { fontSize: 15 },
-  shoppingItemDetail: { fontSize: 13, marginTop: 2 },
   shoppingEmpty: { alignItems: "center", paddingVertical: 40, gap: 12 },
-  shoppingEmptyText: { fontSize: 16, textAlign: "center" },
+  shoppingEmptyText: { fontSize: 15, textAlign: "center" },
+  shoppingItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1 },
+  shoppingCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5 },
+  shoppingItemName: { fontSize: 15 },
+  shoppingItemDetail: { fontSize: 12, marginTop: 2 },
+  modalBtnFull: { paddingVertical: 16, borderRadius: 14, alignItems: "center" },
+  modalBtnText: { fontSize: 16 },
 });
