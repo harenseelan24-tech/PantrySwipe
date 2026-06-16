@@ -253,7 +253,7 @@ export default function OnboardingScreen() {
   };
 
   const pct = `${Math.round(((step + 1) / TOTAL_STEPS) * 100)}%`;
-  const ctaLabel = step === TOTAL_STEPS - 1 ? "Let's Go! 🍳" : step === 5 && allergies.length === 0 ? "Skip — No Allergies →" : "Continue →";
+  const ctaLabel = step === TOTAL_STEPS - 1 ? "Let's Go! 🍳" : step === 5 && allergies.length === 0 ? "Skip — No Allergies" : "Continue";
   const ctaEnabled = isStepValid(step) || step === 5 || step === 8;
 
   return (
