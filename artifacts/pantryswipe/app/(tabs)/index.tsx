@@ -17,7 +17,6 @@ import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/components/SwipeCard";
-import AIChefButton from "@/components/AIChefButton";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { MOCK_RECIPES, Recipe } from "@/data/mockData";
@@ -43,7 +42,6 @@ const MOODS = [
 const SEARCH_VARIANTS: { label: string; subtitle: string; recipeId: string }[] = [
   { label: "Spaghetti Carbonara", subtitle: "Classic Roman · 620 kcal", recipeId: "1" },
   { label: "Carbonara with Pancetta", subtitle: "Crispy pork · 640 kcal", recipeId: "1" },
-  { label: "Healthier Carbonara", subtitle: "Less cream, more flavour · 490 kcal", recipeId: "1" },
   { label: "Garlic Butter Salmon", subtitle: "Mediterranean · 480 kcal", recipeId: "2" },
   { label: "Buddha Bowl", subtitle: "Vegan · 520 kcal", recipeId: "3" },
   { label: "Beef Bibimbap", subtitle: "Korean · 680 kcal", recipeId: "4" },
@@ -56,12 +54,11 @@ const SEARCH_VARIANTS: { label: string; subtitle: string; recipeId: string }[] =
 
 type Particle = { id: string; emoji: string; anim: Animated.ValueXY; opacity: Animated.Value };
 
-// Fixed heights for layout calculation
-const HEADER_CONTENT_H = 54;   // greeting + title
-const SEARCH_H = 48;           // 40 + 8 margin
-const MOOD_H = 44;
-const BANNER_H = 44;           // when visible
-const ACTION_H = 80;
+const HEADER_CONTENT_H = 58;
+const SEARCH_H = 54;
+const MOOD_H = 48;
+const BANNER_H = 50;
+const HINTS_H = 42;
 const TAB_BAR_H = Platform.OS === "web" ? 68 : 60;
 
 export default function HomeScreen() {
@@ -73,11 +70,10 @@ export default function HomeScreen() {
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const hasBanner = pantryItems.length > 0;
 
-  // Deck height = screen - header - search - mood - banner? - actions - tabbar
-  const HEADER_TOTAL = topPadding + 14 + HEADER_CONTENT_H; // paddingTop + paddingBottom + content
+  const HEADER_TOTAL = topPadding + 14 + HEADER_CONTENT_H;
   const deckHeight = Math.max(
-    280,
-    SCREEN_HEIGHT - HEADER_TOTAL - SEARCH_H - MOOD_H - (hasBanner ? BANNER_H : 0) - ACTION_H - TAB_BAR_H
+    300,
+    SCREEN_HEIGHT - HEADER_TOTAL - SEARCH_H - MOOD_H - (hasBanner ? BANNER_H : 0) - HINTS_H - TAB_BAR_H
   );
 
   const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>(MOCK_RECIPES);
@@ -183,10 +179,11 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Compact Header */}
-      <View style={[styles.header, { paddingTop: topPadding + 6, paddingBottom: 8 }]}>
+
+      {/* ── HEADER ── */}
+      <View style={[styles.header, { paddingTop: topPadding + 6, paddingBottom: 10 }]}>
         <View>
-          <Text style={[styles.greeting, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
+          <Text style={[styles.greeting, { color: colors.textMuted, fontFamily: "Inter_500Medium" }]}>
             {greeting}, {userProfile.name} 👋
           </Text>
           <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
@@ -194,13 +191,22 @@ export default function HomeScreen() {
           </Text>
         </View>
         <View style={styles.headerRight}>
+          {/* AI Chef button */}
+          <TouchableOpacity
+            style={styles.aiChefBtn}
+            onPress={() => router.push("/ai-chef")}
+          >
+            <Text style={{ fontSize: 19 }}>👨‍🍳</Text>
+          </TouchableOpacity>
+          {/* Notification bell */}
           <TouchableOpacity
             style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
             onPress={() => router.push("/notifications")}
           >
-            <Feather name="bell" size={18} color={colors.foreground} />
-            <View style={[styles.notifDot, { backgroundColor: colors.primary }]} />
+            <Feather name="bell" size={18} color={colors.primary} />
+            <View style={[styles.notifDot, { backgroundColor: "#EF4444" }]} />
           </TouchableOpacity>
+          {/* Avatar */}
           <TouchableOpacity
             style={[styles.avatar, { backgroundColor: colors.primary }]}
             onPress={() => router.push("/(tabs)/profile")}
@@ -212,20 +218,20 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Search bar */}
+      {/* ── SEARCH BAR ── */}
       <TouchableOpacity
         style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}
         onPress={() => { setSearchQuery(""); setSearchVisible(true); }}
         activeOpacity={0.8}
       >
-        <Feather name="search" size={15} color={colors.textMuted} />
+        <Feather name="search" size={16} color={colors.textMuted} />
         <Text style={[styles.searchPlaceholder, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
           Search recipes, ingredients, cuisine…
         </Text>
-        <Feather name="sliders" size={15} color={colors.textMuted} />
+        <Feather name="sliders" size={16} color={colors.primary} />
       </TouchableOpacity>
 
-      {/* Mood Chips */}
+      {/* ── OCCASION CHIPS ── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -237,19 +243,24 @@ export default function HomeScreen() {
           return (
             <TouchableOpacity
               key={mood.label}
-              style={[styles.moodChip, isActive
-                ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                : { backgroundColor: colors.card, borderColor: colors.border }]}
+              style={[
+                styles.moodChip,
+                isActive
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
               onPress={() => {
                 if (isActive) { resetCards(); }
                 else { setActiveMood(mood.label); applyMood(mood.label); }
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
             >
-              <Text style={[styles.moodChipText, {
-                color: isActive ? colors.primaryForeground : colors.textSecondary,
-                fontFamily: "Inter_500Medium",
-              }]}>
+              <Text
+                style={[
+                  styles.moodChipText,
+                  { color: isActive ? "#fff" : colors.textSecondary, fontFamily: "Inter_500Medium" },
+                ]}
+              >
                 {mood.label}
               </Text>
             </TouchableOpacity>
@@ -257,14 +268,23 @@ export default function HomeScreen() {
         })}
       </ScrollView>
 
-      {/* Smart banner — expiry warning takes priority over pantry match */}
+      {/* ── SMART BANNER ── */}
       {expiringItems.length > 0 ? (
-        <View style={[styles.matchBanner, { backgroundColor: "#F5A62315", borderColor: "#F5A62340" }]}>
-          <Text style={{ fontSize: 15 }}>⚠️</Text>
-          <Text style={[styles.matchBannerText, { color: "#A06800", fontFamily: "Inter_500Medium" }]} numberOfLines={1}>
-            <Text style={{ fontFamily: "SpaceGrotesk_600SemiBold", color: "#F5A623" }}>{expiringItems[0].name}</Text>
-            {expiringItems.length > 1 ? ` +${expiringItems.length - 1} more` : ""} expiring soon — cook it up!
-          </Text>
+        <View style={styles.expiryBannerWrap}>
+          <View style={styles.expiryBannerAccent} />
+          <View style={styles.expiryBannerBody}>
+            <Text style={{ fontSize: 15 }}>⚠️</Text>
+            <Text
+              style={[styles.expiryBannerText, { fontFamily: "Inter_400Regular" }]}
+              numberOfLines={1}
+            >
+              <Text style={{ fontFamily: "Inter_600SemiBold", color: "#0F1C2E" }}>
+                {expiringItems[0].name}
+              </Text>
+              {expiringItems.length > 1 ? ` +${expiringItems.length - 1} more` : ""}
+              {" "}expiring soon — cook it up!
+            </Text>
+          </View>
         </View>
       ) : hasBanner ? (
         <View style={[styles.matchBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -278,12 +298,14 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {/* ── SWIPE DECK ── explicit height, normal-flow wrapper */}
+      {/* ── SWIPE DECK ── */}
       <View style={styles.deckWrapper}>
         {noMoreCards ? (
           <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={{ fontSize: 48 }}>🍽</Text>
-            <Text style={[styles.emptyTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>All caught up!</Text>
+            <Text style={[styles.emptyTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+              All caught up!
+            </Text>
             <Text style={[styles.emptyText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
               {activeMood ? "Try a different mood filter" : "Add more ingredients to unlock recipes"}
             </Text>
@@ -292,7 +314,6 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          /* Card stack — normal-flow outer View, absolute inner cards */
           <View style={[styles.cardStack, { width: CARD_WIDTH, height: deckHeight }]}>
             {visibleRecipes.map((recipe, i) => (
               <SwipeCard
@@ -310,65 +331,63 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Particles */}
+        {/* Particle burst */}
         {particles.map((p) => (
-          <Animated.Text key={p.id} style={[styles.particle, {
-            transform: [{ translateX: p.anim.x }, { translateY: p.anim.y }],
-            opacity: p.opacity,
-          }]}>
+          <Animated.Text
+            key={p.id}
+            style={[
+              styles.particle,
+              { transform: [{ translateX: p.anim.x }, { translateY: p.anim.y }], opacity: p.opacity },
+            ]}
+          >
             {p.emoji}
           </Animated.Text>
         ))}
       </View>
 
-      {/* Action Buttons */}
+      {/* ── SWIPE DIRECTION HINTS (replaces X/Heart/Save buttons) ── */}
       {!noMoreCards && (
-        <View style={styles.actionButtons}>
-          <View style={styles.btnWrapper}>
-            <TouchableOpacity
-              style={[styles.skipBtn, { backgroundColor: colors.skipRed + "18", borderColor: colors.skipRed + "50" }]}
-              onPress={handleSwipeLeft}
-            >
-              <Feather name="x" size={22} color={colors.skipRed} />
-            </TouchableOpacity>
-            <Text style={[styles.btnLabel, { color: colors.textMuted, fontFamily: "Inter_500Medium" }]}>Skip</Text>
+        <View style={styles.hintsRow}>
+          <View style={styles.hintItem}>
+            <Feather name="arrow-left" size={13} color="#EF4444" />
+            <Text style={[styles.hintText, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Skip</Text>
           </View>
-          <View style={[styles.btnWrapper, styles.cookWrapper]}>
-            <TouchableOpacity
-              style={[styles.cookBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
-              onPress={handleSwipeRight}
-            >
-              <Feather name="heart" size={26} color={colors.primaryForeground} />
-            </TouchableOpacity>
-            <Text style={[styles.btnLabel, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>Cook This</Text>
+          <View style={styles.hintSep} />
+          <View style={styles.hintItem}>
+            <Feather name="arrow-up" size={13} color={colors.primary} />
+            <Text style={[styles.hintText, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Save</Text>
           </View>
-          <View style={styles.btnWrapper}>
-            <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: colors.saveBlue + "18", borderColor: colors.saveBlue + "50" }]}
-              onPress={handleSwipeUp}
-            >
-              <Feather name="bookmark" size={20} color={colors.saveBlue} />
-            </TouchableOpacity>
-            <Text style={[styles.btnLabel, { color: colors.textMuted, fontFamily: "Inter_500Medium" }]}>Save</Text>
+          <View style={styles.hintSep} />
+          <View style={styles.hintItem}>
+            <Feather name="arrow-right" size={13} color="#10B981" />
+            <Text style={[styles.hintText, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Cook this</Text>
           </View>
         </View>
       )}
 
-      {/* Save toast */}
+      {/* ── SAVE TOAST ── */}
       {saveToast && (
-        <Animated.View style={[styles.saveToast, {
-          backgroundColor: colors.saveBlue,
-          opacity: saveToastAnim,
-          transform: [{ translateY: saveToastAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-        }]}>
+        <Animated.View
+          style={[
+            styles.saveToast,
+            {
+              backgroundColor: colors.primary,
+              opacity: saveToastAnim,
+              transform: [{ translateY: saveToastAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+            },
+          ]}
+        >
           <Text style={[styles.saveToastText, { fontFamily: "Inter_600SemiBold" }]}>Saved for later 🔖</Text>
         </Animated.View>
       )}
 
-      <AIChefButton />
-
-      {/* Search Modal */}
-      <Modal visible={searchVisible} animationType="slide" transparent onRequestClose={() => setSearchVisible(false)}>
+      {/* ── SEARCH MODAL ── */}
+      <Modal
+        visible={searchVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setSearchVisible(false)}
+      >
         <View style={styles.searchModalOverlay}>
           <View style={[styles.searchModalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.searchModalBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -383,7 +402,9 @@ export default function HomeScreen() {
                 returnKeyType="search"
               />
               <TouchableOpacity onPress={() => setSearchVisible(false)}>
-                <Text style={[styles.searchCancelText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>Cancel</Text>
+                <Text style={[styles.searchCancelText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -399,7 +420,9 @@ export default function HomeScreen() {
                       style={[styles.searchTag, { backgroundColor: colors.card, borderColor: colors.border }]}
                       onPress={() => setSearchQuery(tag.split(" ")[1])}
                     >
-                      <Text style={[styles.searchTagText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>{tag}</Text>
+                      <Text style={[styles.searchTagText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
+                        {tag}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -421,12 +444,16 @@ export default function HomeScreen() {
                     style={[styles.searchResultRow, { borderBottomColor: colors.border }]}
                     onPress={() => { setSearchVisible(false); router.push(`/recipe/${item.recipeId}`); }}
                   >
-                    <View style={[styles.searchResultIcon, { backgroundColor: colors.primary + "20" }]}>
+                    <View style={[styles.searchResultIcon, { backgroundColor: colors.card }]}>
                       <Feather name="book-open" size={16} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.searchResultTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{item.label}</Text>
-                      <Text style={[styles.searchResultSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{item.subtitle}</Text>
+                      <Text style={[styles.searchResultTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                        {item.label}
+                      </Text>
+                      <Text style={[styles.searchResultSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                        {item.subtitle}
+                      </Text>
                     </View>
                     <Feather name="arrow-right" size={16} color={colors.textMuted} />
                   </TouchableOpacity>
@@ -442,6 +469,8 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  // ── Header ──
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -449,28 +478,103 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   greeting: { fontSize: 12, marginBottom: 2 },
-  headerTitle: { fontSize: 20, letterSpacing: -0.3 },
+  headerTitle: { fontSize: 22, letterSpacing: -0.4 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  iconBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", position: "relative" },
-  notifDot: { position: "absolute", top: 7, right: 7, width: 7, height: 7, borderRadius: 3.5 },
-  avatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  aiChefBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#2B7FFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2B7FFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  notifDot: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avatarText: { color: "#fff", fontSize: 14 },
+
+  // ── Search ──
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
     marginHorizontal: 16,
     paddingHorizontal: 14,
-    height: 40,
-    borderRadius: 100,
+    height: 46,
+    borderRadius: 14,
     borderWidth: 1,
     marginBottom: 8,
   },
   searchPlaceholder: { fontSize: 13, flex: 1 },
-  moodScrollView: { height: 44, flexGrow: 0, flexShrink: 0 },
-  moodStrip: { paddingHorizontal: 16, gap: 7, alignItems: "center", height: 44 },
-  moodChip: { height: 30, paddingHorizontal: 13, borderRadius: 100, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  moodChipText: { fontSize: 12 },
+
+  // ── Mood chips ──
+  moodScrollView: { height: 48, flexGrow: 0, flexShrink: 0 },
+  moodStrip: { paddingHorizontal: 16, gap: 8, alignItems: "center", height: 48 },
+  moodChip: {
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodChipText: { fontSize: 13 },
+
+  // ── Expiry banner ──
+  expiryBannerWrap: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "#FFF8EB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  expiryBannerAccent: {
+    width: 4,
+    backgroundColor: "#F59E0B",
+  },
+  expiryBannerBody: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  expiryBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#78480C",
+  },
+
+  // ── Pantry match banner ──
   matchBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -478,12 +582,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     marginBottom: 8,
   },
   matchDot: { width: 7, height: 7, borderRadius: 3.5 },
   matchBannerText: { flex: 1, fontSize: 13 },
+
   // ── Deck ──
   deckWrapper: { alignItems: "center", position: "relative" },
   cardStack: { position: "relative" },
@@ -502,25 +607,30 @@ const styles = StyleSheet.create({
   emptyBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100, marginTop: 6 },
   emptyBtnText: { color: "#fff", fontSize: 15 },
   particle: { position: "absolute", fontSize: 22, zIndex: 999 },
-  // ── Actions ──
-  actionButtons: {
+
+  // ── Swipe hints row ──
+  hintsRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "flex-end",
-    gap: 28,
-    paddingTop: 6,
-    paddingBottom: 10,
-    height: 80,
+    gap: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    height: HINTS_H,
   },
-  btnWrapper: { alignItems: "center", gap: 5 },
-  cookWrapper: { transform: [{ translateY: -8 }] },
-  btnLabel: { fontSize: 11 },
-  skipBtn: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
-  cookBtn: {
-    width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center",
-    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 14, elevation: 8,
+  hintItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
   },
-  saveBtn: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
+  hintText: { fontSize: 12 },
+  hintSep: {
+    width: 1,
+    height: 14,
+    backgroundColor: "#E2EAFF",
+  },
+
+  // ── Save toast ──
   saveToast: {
     position: "absolute",
     top: Platform.OS === "web" ? 80 : 90,
@@ -531,10 +641,26 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
   saveToastText: { color: "#fff", fontSize: 14 },
+
   // ── Search Modal ──
-  searchModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
-  searchModalContainer: { flex: 1, marginTop: Platform.OS === "web" ? 60 : 80, borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: "hidden" },
-  searchModalBar: { flexDirection: "row", alignItems: "center", gap: 10, margin: 16, paddingHorizontal: 14, height: 48, borderRadius: 14, borderWidth: 1 },
+  searchModalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
+  searchModalContainer: {
+    flex: 1,
+    marginTop: Platform.OS === "web" ? 60 : 80,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+  },
+  searchModalBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    margin: 16,
+    paddingHorizontal: 14,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
   searchModalInput: { flex: 1, fontSize: 16 },
   searchCancelText: { fontSize: 15 },
   searchSuggestions: { paddingHorizontal: 16, paddingTop: 8, gap: 16 },
@@ -542,8 +668,21 @@ const styles = StyleSheet.create({
   searchTags: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   searchTag: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100, borderWidth: 1 },
   searchTagText: { fontSize: 13 },
-  searchResultRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
-  searchResultIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  searchResultRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  searchResultIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   searchResultTitle: { fontSize: 15, marginBottom: 2 },
   searchResultSub: { fontSize: 13 },
   noResults: { paddingTop: 40, alignItems: "center" },

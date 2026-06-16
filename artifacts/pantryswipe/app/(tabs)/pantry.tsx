@@ -10,26 +10,55 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
-import { MOCK_RECIPES, PantryItem } from "@/data/mockData";
+import { MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
+
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 const CATEGORIES = ["All", "Fridge", "Freezer", "Pantry", "Spices", "Sauces", "Produce"] as const;
 const UNITS = ["g", "kg", "ml", "L", "cups", "pieces", "tbsp", "tsp", "cans", "slices", "cloves", "bunches"];
 const CATEGORY_ITEMS = ["Fridge", "Freezer", "Pantry", "Spices", "Sauces", "Produce"] as const;
 
-const STATUS_COLORS: Record<string, string> = {
-  Fresh: "#00BFA5",
-  "Use Soon": "#F5A623",
-  Expiring: "#E84040",
-  Expired: "#666",
+const STATUS_BG: Record<string, string> = {
+  Fresh: "#ECFDF5",
+  "Use Soon": "#FFFBEB",
+  Expiring: "#FEF2F2",
+  Expired: "#F9FAFB",
+};
+const STATUS_TEXT: Record<string, string> = {
+  Fresh: "#059669",
+  "Use Soon": "#D97706",
+  Expiring: "#DC2626",
+  Expired: "#6B7280",
+};
+const STATUS_DOT: Record<string, string> = {
+  Fresh: "#10B981",
+  "Use Soon": "#F59E0B",
+  Expiring: "#EF4444",
+  Expired: "#9CA3AF",
 };
 
-// Simulated barcode scan results
+const CUISINE_EMOJIS: Record<string, string> = {
+  Italian: "🍝", Japanese: "🍜", Korean: "🥘", Mexican: "🌮",
+  Indian: "🍛", Chinese: "🥡", Thai: "🍲", American: "🍔",
+  French: "🥐", Mediterranean: "🫒", "Middle Eastern": "🧆", Vietnamese: "🍜",
+};
+
+const RECIPE_GROUPS = [
+  { label: "⚡ Quick & Easy", filter: (r: Recipe) => r.prepTime + r.cookTime <= 20 },
+  { label: "💪 High Protein", filter: (r: Recipe) => r.nutrition.protein >= 25 },
+  { label: "🥗 Light & Healthy", filter: (r: Recipe) => r.calories <= 450 },
+  { label: "🍲 Comfort Food", filter: (r: Recipe) => r.calories > 450 && r.rating >= 4.7 },
+  { label: "🌱 Plant-Based", filter: (r: Recipe) => r.tags.some((t) => t.includes("vegan") || t.includes("vegetarian")) },
+];
+
 const BARCODE_DEMOS: { name: string; quantity: number; unit: string; category: typeof CATEGORY_ITEMS[number]; emoji: string }[] = [
   { name: "Himalayan Pink Salt", quantity: 500, unit: "g", category: "Spices", emoji: "🧂" },
   { name: "Heinz Tomato Ketchup", quantity: 570, unit: "ml", category: "Sauces", emoji: "🍅" },
@@ -41,9 +70,10 @@ const BARCODE_DEMOS: { name: string; quantity: number; unit: string; category: t
 export default function PantryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { pantryItems, addToPantry, removeFromPantry, getPantryMatchScore } = useApp();
-  const [showWhatCanIMake, setShowWhatCanIMake] = useState(false);
 
+  const [showWhatCanIMake, setShowWhatCanIMake] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [search, setSearch] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -73,7 +103,7 @@ export default function PantryScreen() {
     .map((r) => ({ recipe: r, score: getPantryMatchScore(r) }))
     .filter(({ score }) => score >= 50)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 20);
+    .slice(0, 30);
 
   const handleAddItem = () => {
     if (!newItemName.trim()) return;
@@ -97,7 +127,6 @@ export default function PantryScreen() {
   const handleScanStart = () => {
     setScanning(true);
     setScannedProduct(null);
-    // Animate scan line
     scanLineAnim.setValue(0);
     Animated.loop(
       Animated.sequence([
@@ -105,7 +134,6 @@ export default function PantryScreen() {
         Animated.timing(scanLineAnim, { toValue: 0, duration: 1200, useNativeDriver: false }),
       ])
     ).start();
-    // Simulate barcode detection after 2.5s
     setTimeout(() => {
       const product = BARCODE_DEMOS[Math.floor(Math.random() * BARCODE_DEMOS.length)];
       setScannedProduct(product);
@@ -131,18 +159,18 @@ export default function PantryScreen() {
     setScannedProduct(null);
   };
 
-  const scanLineY = scanLineAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [20, 180],
-  });
+  const scanLineY = scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 180] });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+
+      {/* ── HEADER ── */}
       <View style={[styles.header, { paddingTop: topPadding + 6 }]}>
         <View>
-          <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>My Pantry</Text>
-          <Text style={[styles.headerSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+          <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+            My Pantry
+          </Text>
+          <Text style={[styles.headerSub, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
             {pantryItems.length} items tracked
           </Text>
         </View>
@@ -154,15 +182,15 @@ export default function PantryScreen() {
             <Feather name="camera" size={18} color={colors.primary} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.addBtn, { backgroundColor: colors.primary }]}
+            style={[styles.addBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
             onPress={() => setShowAddModal(true)}
           >
-            <Feather name="plus" size={20} color={colors.primaryForeground} />
+            <Feather name="plus" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search */}
+      {/* ── SEARCH ── */}
       <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Feather name="search" size={15} color={colors.textMuted} />
         <TextInput
@@ -179,22 +207,32 @@ export default function PantryScreen() {
         )}
       </View>
 
-      {/* Expiry alert */}
+      {/* ── EXPIRY ALERT ── */}
       {expiringItems.length > 0 && (
         <TouchableOpacity
-          style={[styles.expiryAlert, { backgroundColor: "#E84040" + "12", borderColor: "#E84040" + "35" }]}
+          style={styles.expiryAlertWrap}
           onPress={() => setShowExpiryModal(true)}
+          activeOpacity={0.85}
         >
-          <Feather name="alert-triangle" size={14} color="#E84040" />
-          <Text style={[styles.expiryAlertText, { color: "#E84040", fontFamily: "Inter_500Medium" }]}>
-            {expiringItems.length} {expiringItems.length === 1 ? "item" : "items"} expiring soon
-          </Text>
-          <Text style={[styles.expiryView, { color: "#E84040", fontFamily: "Inter_700Bold" }]}>View →</Text>
+          <View style={styles.expiryAlertAccent} />
+          <View style={styles.expiryAlertBody}>
+            <Text style={{ fontSize: 14 }}>⚠️</Text>
+            <Text style={[styles.expiryAlertText, { fontFamily: "Inter_600SemiBold" }]}>
+              {expiringItems.length} {expiringItems.length === 1 ? "item" : "items"} expiring soon
+            </Text>
+            <Text style={[styles.expiryViewLink, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+              View →
+            </Text>
+          </View>
         </TouchableOpacity>
       )}
 
-      {/* Category tabs — fixed height pills */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesContainer}>
+      {/* ── CATEGORY TABS ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoriesContainer}
+      >
         {CATEGORIES.map((cat) => {
           const isActive = activeCategory === cat;
           return (
@@ -208,7 +246,15 @@ export default function PantryScreen() {
               ]}
               onPress={() => setActiveCategory(cat)}
             >
-              <Text style={[styles.categoryTabText, { color: isActive ? colors.primaryForeground : colors.foreground, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" }]}>
+              <Text
+                style={[
+                  styles.categoryTabText,
+                  {
+                    color: isActive ? "#fff" : colors.textSecondary,
+                    fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium",
+                  },
+                ]}
+              >
                 {cat}
               </Text>
             </TouchableOpacity>
@@ -216,7 +262,7 @@ export default function PantryScreen() {
         })}
       </ScrollView>
 
-      {/* Items list */}
+      {/* ── PANTRY ITEMS LIST ── */}
       <FlatList
         data={filtered}
         keyExtractor={(i) => i.id}
@@ -225,127 +271,209 @@ export default function PantryScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Feather name="shopping-bag" size={36} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>No items in {activeCategory === "All" ? "pantry" : activeCategory}</Text>
-            <TouchableOpacity style={[styles.emptyBtn, { backgroundColor: colors.primary }]} onPress={() => setShowAddModal(true)}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+              No items in {activeCategory === "All" ? "pantry" : activeCategory}
+            </Text>
+            <TouchableOpacity
+              style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
+              onPress={() => setShowAddModal(true)}
+            >
               <Text style={[styles.emptyBtnText, { fontFamily: "Inter_700Bold" }]}>Add Item</Text>
             </TouchableOpacity>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={[styles.pantryItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={styles.itemEmoji}>{item.emoji}</Text>
-            <View style={styles.itemInfo}>
-              <Text style={[styles.itemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{item.name}</Text>
-              <Text style={[styles.itemDetail, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                {item.quantity} {item.unit} · {item.category}
-              </Text>
-            </View>
-            <View style={styles.itemRight}>
-              <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] + "20" }]}>
-                <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[item.status] }]} />
-                <Text style={[styles.statusText, { color: STATUS_COLORS[item.status], fontFamily: "SpaceGrotesk_600SemiBold" }]}>{item.status}</Text>
+        renderItem={({ item }) => {
+          const bg = STATUS_BG[item.status] ?? "#F9FAFB";
+          const txt = STATUS_TEXT[item.status] ?? "#6B7280";
+          const dot = STATUS_DOT[item.status] ?? "#9CA3AF";
+          return (
+            <View style={styles.pantryItem}>
+              {/* Fixed 48px emoji icon column */}
+              <View style={[styles.itemIconBox, { backgroundColor: colors.card }]}>
+                <Text style={styles.itemEmoji}>{item.emoji}</Text>
               </View>
-              <TouchableOpacity onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); removeFromPantry(item.id); }}>
-                <Feather name="trash-2" size={15} color={colors.textMuted} />
-              </TouchableOpacity>
+              {/* Text info */}
+              <View style={styles.itemInfo}>
+                <Text
+                  style={[styles.itemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+                <Text style={[styles.itemDetail, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                  {item.quantity} {item.unit} · {item.category}
+                </Text>
+              </View>
+              {/* Status badge + delete */}
+              <View style={styles.itemRight}>
+                <View style={[styles.statusBadge, { backgroundColor: bg }]}>
+                  <View style={[styles.statusDot, { backgroundColor: dot }]} />
+                  <Text style={[styles.statusText, { color: txt, fontFamily: "Inter_500Medium" }]}>
+                    {item.status}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    removeFromPantry(item.id);
+                  }}
+                >
+                  <Feather name="trash-2" size={15} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }}
+        ListFooterComponent={
+          <View style={[styles.intelligencePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.intelligenceTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
+              Pantry Intelligence
+            </Text>
+            <View style={styles.intelligenceRows}>
+              <View style={styles.intelligenceRow}>
+                <View style={[styles.intelligenceIcon, { backgroundColor: colors.primary + "22" }]}>
+                  <Feather name="check-circle" size={14} color={colors.primary} />
+                </View>
+                <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
+                  <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>{completeRecipes} complete recipes</Text> you can cook right now
+                </Text>
+              </View>
+              <View style={styles.intelligenceRow}>
+                <View style={[styles.intelligenceIcon, { backgroundColor: "#F59E0B22" }]}>
+                  <Feather name="plus-circle" size={14} color="#F59E0B" />
+                </View>
+                <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
+                  <Text style={{ fontFamily: "Inter_700Bold", color: "#F59E0B" }}>1 ingredient away</Text> from {oneIngredientAway} more
+                </Text>
+              </View>
+              <View style={styles.intelligenceRow}>
+                <View style={[styles.intelligenceIcon, { backgroundColor: colors.saveBlue + "22" }]}>
+                  <Feather name="dollar-sign" size={14} color={colors.saveBlue} />
+                </View>
+                <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
+                  Estimated pantry value:{" "}
+                  <Text style={{ fontFamily: "SpaceGrotesk_600SemiBold", color: colors.saveBlue }}>${pantryValue}</Text>
+                </Text>
+              </View>
             </View>
           </View>
-        )}
-        ListFooterComponent={
-          <>
-            {/* ── What Can I Make? ── */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[styles.whatPanel, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => {
-                setShowWhatCanIMake((p) => !p);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-            >
-              <View style={styles.whatPanelHeader}>
-                <Text style={{ fontSize: 22 }}>🍳</Text>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={[styles.whatPanelTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
-                    What Can I Make?
-                  </Text>
-                  <Text style={[styles.whatPanelSub, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
-                    {matchableRecipes.length} dishes with 50%+ match
-                  </Text>
-                </View>
-                <Feather
-                  name={showWhatCanIMake ? "chevron-up" : "chevron-down"}
-                  size={20}
-                  color={colors.textMuted}
-                />
-              </View>
-              {showWhatCanIMake && (
-                <View style={styles.whatPanelList}>
-                  {matchableRecipes.map(({ recipe, score }, index) => (
-                    <View
-                      key={recipe.id}
-                      style={[styles.whatPanelRow, index > 0 && { borderTopWidth: 1, borderTopColor: colors.border }]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.whatPanelName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>
-                          {recipe.title}
-                        </Text>
-                        <Text style={[styles.whatPanelMeta, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                          {recipe.cuisine} · {recipe.prepTime + recipe.cookTime} min · {recipe.calories} kcal
-                        </Text>
-                      </View>
-                      <View style={[styles.whatPanelScore, { backgroundColor: score >= 80 ? colors.primary + "20" : "#F5A62320" }]}>
-                        <Text style={[styles.whatPanelScoreText, { color: score >= 80 ? colors.primary : "#E09A00", fontFamily: "SpaceGrotesk_700Bold" }]}>
-                          {score}%
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {/* ── Pantry Intelligence ── */}
-            <View style={[styles.intelligencePanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.intelligenceTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Pantry Intelligence</Text>
-              <View style={styles.intelligenceRows}>
-                <View style={styles.intelligenceRow}>
-                  <View style={[styles.intelligenceIcon, { backgroundColor: colors.primary + "20" }]}>
-                    <Feather name="check-circle" size={14} color={colors.primary} />
-                  </View>
-                  <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-                    <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>{completeRecipes} complete recipes</Text> you can cook right now
-                  </Text>
-                </View>
-                <View style={styles.intelligenceRow}>
-                  <View style={[styles.intelligenceIcon, { backgroundColor: "#F5A623" + "20" }]}>
-                    <Feather name="plus-circle" size={14} color="#F5A623" />
-                  </View>
-                  <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-                    <Text style={{ fontFamily: "Inter_700Bold", color: "#F5A623" }}>1 ingredient away</Text> from {oneIngredientAway} more
-                  </Text>
-                </View>
-                <View style={styles.intelligenceRow}>
-                  <View style={[styles.intelligenceIcon, { backgroundColor: colors.saveBlue + "20" }]}>
-                    <Feather name="dollar-sign" size={14} color={colors.saveBlue} />
-                  </View>
-                  <Text style={[styles.intelligenceText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-                    Estimated pantry value: <Text style={{ fontFamily: "SpaceGrotesk_600SemiBold", color: colors.saveBlue }}>${pantryValue}</Text>
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </>
         }
       />
 
-      {/* ── Add Item Modal ── */}
+      {/* ── STICKY "WHAT CAN I MAKE?" PANEL ── */}
+      <View style={[styles.stickyPanel, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+        <TouchableOpacity
+          style={styles.stickyPanelInner}
+          onPress={() => { setShowWhatCanIMake(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.stickyPanelLeft}>
+            <Text style={{ fontSize: 20 }}>🍳</Text>
+            <View style={{ marginLeft: 10 }}>
+              <Text style={[styles.stickyPanelTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                What Can I Make?
+              </Text>
+              <Text style={[styles.stickyPanelSub, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                {matchableRecipes.length} dishes with your pantry
+              </Text>
+            </View>
+          </View>
+          <View style={styles.stickyPanelRight}>
+            <Text style={[styles.stickyPanelSeeAll, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+              See all
+            </Text>
+            <Feather name="chevron-up" size={18} color={colors.primary} />
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── "WHAT CAN I MAKE?" BOTTOM SHEET MODAL ── */}
+      <Modal
+        visible={showWhatCanIMake}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowWhatCanIMake(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowWhatCanIMake(false)} />
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            {/* Handle */}
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+
+            {/* Header */}
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+                What Can I Make?
+              </Text>
+              <View style={[styles.sheetCountPill, { backgroundColor: colors.primary + "18" }]}>
+                <Text style={[styles.sheetCountText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
+                  {matchableRecipes.length} dishes
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowWhatCanIMake(false)} style={{ marginLeft: "auto" }}>
+                <Feather name="x" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Grouped recipe list */}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+              {RECIPE_GROUPS.map((group) => {
+                const groupItems = matchableRecipes.filter(({ recipe }) => group.filter(recipe));
+                if (groupItems.length === 0) return null;
+                return (
+                  <View key={group.label} style={styles.sheetGroup}>
+                    <Text style={[styles.sheetGroupLabel, { color: colors.textMuted, fontFamily: "Inter_600SemiBold" }]}>
+                      {group.label}
+                    </Text>
+                    {groupItems.slice(0, 5).map(({ recipe, score }) => (
+                      <TouchableOpacity
+                        key={recipe.id}
+                        style={[styles.sheetRow, { backgroundColor: colors.card }]}
+                        onPress={() => { setShowWhatCanIMake(false); router.push(`/recipe/${recipe.id}`); }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.sheetRowIcon}>
+                          <Text style={{ fontSize: 22 }}>{CUISINE_EMOJIS[recipe.cuisine] ?? "🍽"}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[styles.sheetRowName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}
+                            numberOfLines={1}
+                          >
+                            {recipe.title}
+                          </Text>
+                          <Text style={[styles.sheetRowMeta, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                            {recipe.ingredients.filter((i) => i.inPantry).length}/{recipe.ingredients.length} ingredients · {recipe.prepTime + recipe.cookTime} min · {recipe.calories} kcal
+                          </Text>
+                        </View>
+                        <View style={[styles.sheetScore, { backgroundColor: score >= 80 ? "#ECFDF5" : "#FFFBEB" }]}>
+                          <Text style={[styles.sheetScoreText, { color: score >= 80 ? "#059669" : "#D97706", fontFamily: "Inter_600SemiBold" }]}>
+                            ✓ {score}%
+                          </Text>
+                        </View>
+                        <Feather name="chevron-right" size={14} color={colors.textMuted} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── ADD ITEM MODAL ── */}
       <Modal visible={showAddModal} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowAddModal(false)}>
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Add Pantry Item</Text>
+          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+            Add Pantry Item
+          </Text>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalForm}>
-            <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Ingredient name</Text>
+            <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+              Ingredient name
+            </Text>
             <TextInput
               style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, fontFamily: "Inter_400Regular" }]}
               placeholder="e.g. Chicken Breast"
@@ -357,7 +485,9 @@ export default function PantryScreen() {
 
             <View style={styles.row}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Quantity</Text>
+                <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                  Quantity
+                </Text>
                 <TextInput
                   style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card, fontFamily: "Inter_400Regular" }]}
                   placeholder="1"
@@ -368,30 +498,50 @@ export default function PantryScreen() {
                 />
               </View>
               <View style={{ flex: 1.4 }}>
-                <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Unit</Text>
+                <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                  Unit
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitScroll}>
                   {UNITS.map((u) => (
                     <TouchableOpacity
                       key={u}
-                      style={[styles.unitPill, { backgroundColor: newItemUnit === u ? colors.primary : colors.card, borderColor: newItemUnit === u ? colors.primary : colors.border }]}
+                      style={[
+                        styles.unitPill,
+                        {
+                          backgroundColor: newItemUnit === u ? colors.primary : colors.card,
+                          borderColor: newItemUnit === u ? colors.primary : colors.border,
+                        },
+                      ]}
                       onPress={() => setNewItemUnit(u)}
                     >
-                      <Text style={[styles.unitPillText, { color: newItemUnit === u ? colors.primaryForeground : colors.foreground, fontFamily: "Inter_500Medium" }]}>{u}</Text>
+                      <Text style={[styles.unitPillText, { color: newItemUnit === u ? "#fff" : colors.foreground, fontFamily: "Inter_500Medium" }]}>
+                        {u}
+                      </Text>
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
               </View>
             </View>
 
-            <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Category</Text>
+            <Text style={[styles.inputLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+              Category
+            </Text>
             <View style={styles.categoryGrid}>
               {CATEGORY_ITEMS.map((cat) => (
                 <TouchableOpacity
                   key={cat}
-                  style={[styles.categoryPill, { backgroundColor: newItemCategory === cat ? colors.primary : colors.card, borderColor: newItemCategory === cat ? colors.primary : colors.border }]}
+                  style={[
+                    styles.categoryPill,
+                    {
+                      backgroundColor: newItemCategory === cat ? colors.primary : colors.card,
+                      borderColor: newItemCategory === cat ? colors.primary : colors.border,
+                    },
+                  ]}
                   onPress={() => setNewItemCategory(cat)}
                 >
-                  <Text style={[styles.categoryPillText, { color: newItemCategory === cat ? colors.primaryForeground : colors.foreground, fontFamily: "Inter_500Medium" }]}>{cat}</Text>
+                  <Text style={[styles.categoryPillText, { color: newItemCategory === cat ? "#fff" : colors.foreground, fontFamily: "Inter_500Medium" }]}>
+                    {cat}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -402,65 +552,68 @@ export default function PantryScreen() {
               <Text style={[styles.modalBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.primary }]} onPress={handleAddItem}>
-              <Text style={[styles.modalBtnText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>Add to Pantry</Text>
+              <Text style={[styles.modalBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Add to Pantry</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* ── Expiry Modal ── */}
+      {/* ── EXPIRY MODAL ── */}
       <Modal visible={showExpiryModal} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowExpiryModal(false)}>
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Expiring Soon 🕐</Text>
-
+          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+            Expiring Soon 🕐
+          </Text>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 24 }}>
             {expiringItems.map((item) => (
-              <View key={item.id} style={[styles.expiryItem, { backgroundColor: colors.card, borderColor: "#E84040" + "30" }]}>
+              <View key={item.id} style={[styles.expiryItem, { backgroundColor: colors.card, borderColor: "#EF444430" }]}>
                 <Text style={{ fontSize: 28 }}>{item.emoji}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.itemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{item.name}</Text>
-                  <Text style={[styles.itemDetail, { color: "#E84040", fontFamily: "Inter_400Regular" }]}>
+                  <Text style={[styles.itemDetail, { color: "#EF4444", fontFamily: "Inter_400Regular" }]}>
                     {item.status} · {item.quantity} {item.unit}
                   </Text>
                 </View>
               </View>
             ))}
-
             <Text style={[styles.expiryHint, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
               Recipes that use these ingredients:
             </Text>
             {MOCK_RECIPES.filter((r) =>
-              r.ingredients.some((ing) => expiringItems.some((e) => e.name.toLowerCase().includes(ing.name.toLowerCase().split(" ")[0])))
+              r.ingredients.some((ing) =>
+                expiringItems.some((e) => e.name.toLowerCase().includes(ing.name.toLowerCase().split(" ")[0]))
+              )
             ).slice(0, 3).map((r) => (
               <View key={r.id} style={[styles.expiryRecipe, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Feather name="book-open" size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.itemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{r.title}</Text>
-                  <Text style={[styles.itemDetail, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{r.prepTime + r.cookTime} min · {r.calories} kcal</Text>
+                  <Text style={[styles.itemDetail, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                    {r.prepTime + r.cookTime} min · {r.calories} kcal
+                  </Text>
                 </View>
               </View>
             ))}
           </ScrollView>
-
           <TouchableOpacity style={[styles.modalBtnFull, { backgroundColor: colors.primary }]} onPress={() => setShowExpiryModal(false)}>
-            <Text style={[styles.modalBtnText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>Got it</Text>
+            <Text style={[styles.modalBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Got it</Text>
           </TouchableOpacity>
         </View>
       </Modal>
 
-      {/* ── Barcode Scanner Modal ── */}
+      {/* ── BARCODE MODAL ── */}
       <Modal visible={showBarcodeModal} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowBarcodeModal(false)}>
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Scan Barcode 📷</Text>
-
+          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+            Scan Barcode 📷
+          </Text>
           {!scannedProduct ? (
             <>
-              {/* Camera viewfinder */}
               <View style={[styles.viewfinder, { backgroundColor: "#000" }]}>
                 <View style={styles.viewfinderCorners}>
-                  {["tl", "tr", "bl", "br"].map((corner) => (
+                  {(["tl", "tr", "bl", "br"] as const).map((corner) => (
                     <View key={corner} style={[styles.corner, styles[`corner_${corner}` as keyof typeof styles] as any, { borderColor: colors.primary }]} />
                   ))}
                 </View>
@@ -471,39 +624,40 @@ export default function PantryScreen() {
                   {scanning ? "Scanning..." : "Point camera at barcode"}
                 </Text>
               </View>
-
               <Text style={[styles.scanHint, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
                 Barcode detected items will automatically populate name, quantity, and nutritional info.
               </Text>
-
               <TouchableOpacity
                 style={[styles.scanStartBtn, { backgroundColor: colors.primary }]}
                 onPress={handleScanStart}
                 disabled={scanning}
               >
-                <Feather name="camera" size={20} color={colors.primaryForeground} />
-                <Text style={[styles.scanStartText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>
+                <Feather name="camera" size={20} color="#fff" />
+                <Text style={[styles.scanStartText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>
                   {scanning ? "Scanning…" : "Start Scan"}
                 </Text>
               </TouchableOpacity>
             </>
           ) : (
             <View style={styles.scannedResult}>
-              <View style={[styles.scannedIcon, { backgroundColor: colors.primary + "20" }]}>
+              <View style={[styles.scannedIcon, { backgroundColor: colors.card }]}>
                 <Text style={{ fontSize: 48 }}>{scannedProduct.emoji}</Text>
               </View>
-              <Text style={[styles.scannedLabel, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>Product detected</Text>
-              <Text style={[styles.scannedName, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>{scannedProduct.name}</Text>
+              <Text style={[styles.scannedLabel, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
+                Product detected
+              </Text>
+              <Text style={[styles.scannedName, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+                {scannedProduct.name}
+              </Text>
               <Text style={[styles.scannedMeta, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
                 {scannedProduct.quantity} {scannedProduct.unit} · {scannedProduct.category}
               </Text>
-
               <View style={styles.scannedActions}>
                 <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.muted }]} onPress={() => setScannedProduct(null)}>
                   <Text style={[styles.modalBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Scan Again</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.primary }]} onPress={handleAddScanned}>
-                  <Text style={[styles.modalBtnText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>Add to Pantry</Text>
+                  <Text style={[styles.modalBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>Add to Pantry</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -516,6 +670,8 @@ export default function PantryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
+  // ── Header ──
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -527,87 +683,221 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, marginTop: 2 },
   headerBtns: { flexDirection: "row", gap: 10 },
   scanBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
-  addBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  addBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+
+  // ── Search ──
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     paddingHorizontal: 14,
-    height: 42,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  searchInput: { flex: 1, fontSize: 14 },
-  expiryAlert: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginHorizontal: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
+    height: 46,
+    borderRadius: 14,
     borderWidth: 1,
     marginBottom: 10,
   },
-  expiryAlertText: { flex: 1, fontSize: 13 },
-  expiryView: { fontSize: 13 },
-  categoriesContainer: { paddingHorizontal: 20, gap: 8, paddingBottom: 12, alignItems: "center", height: 50 },
-  categoryTab: { height: 32, paddingHorizontal: 16, borderRadius: 100, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  searchInput: { flex: 1, fontSize: 14 },
+
+  // ── Expiry alert ──
+  expiryAlertWrap: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#FFF1F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  expiryAlertAccent: {
+    width: 4,
+    backgroundColor: "#EF4444",
+  },
+  expiryAlertBody: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  expiryAlertText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#EF4444",
+  },
+  expiryViewLink: { fontSize: 13 },
+
+  // ── Category tabs ──
+  categoriesContainer: { paddingHorizontal: 16, gap: 8, paddingBottom: 10, alignItems: "center", height: 50 },
+  categoryTab: { height: 34, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   categoryTabText: { fontSize: 13 },
-  listContent: { paddingHorizontal: 20, gap: 10, paddingBottom: 120 },
-  pantryItem: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 14, borderWidth: 1, gap: 12 },
-  itemEmoji: { fontSize: 26 },
-  itemInfo: { flex: 1, gap: 2 },
+
+  // ── List ──
+  listContent: { paddingHorizontal: 16, gap: 10, paddingBottom: 100 },
+  pantryItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    paddingRight: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2EAFF",
+    backgroundColor: "#FFFFFF",
+    gap: 14,
+    minHeight: 72,
+    shadowColor: "#2B7FFF",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  itemIconBox: {
+    width: 48,
+    height: 48,
+    minWidth: 48,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  itemEmoji: { fontSize: 24 },
+  itemInfo: { flex: 1, gap: 3, overflow: "hidden" },
   itemName: { fontSize: 15 },
   itemDetail: { fontSize: 13 },
-  itemRight: { alignItems: "flex-end", gap: 8 },
-  statusBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
+  itemRight: {
+    alignItems: "flex-end",
+    gap: 8,
+    minWidth: 84,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusText: { fontSize: 11 },
+
+  // ── Empty state ──
   emptyState: { alignItems: "center", paddingVertical: 48, gap: 12 },
   emptyText: { fontSize: 15 },
   emptyBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100, marginTop: 4 },
   emptyBtnText: { color: "#fff", fontSize: 15 },
-  whatPanel: {
-    marginTop: 8,
-    marginBottom: 2,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  whatPanelHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-  },
-  whatPanelTitle: { fontSize: 15 },
-  whatPanelSub: { fontSize: 13, marginTop: 1 },
-  whatPanelList: { borderTopWidth: 1, borderTopColor: "transparent" },
-  whatPanelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  whatPanelName: { fontSize: 14 },
-  whatPanelMeta: { fontSize: 12, marginTop: 2 },
-  whatPanelScore: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 100,
-    minWidth: 46,
-    alignItems: "center",
-  },
-  whatPanelScoreText: { fontSize: 13 },
-  intelligencePanel: { marginTop: 8, padding: 16, borderRadius: 16, borderWidth: 1, gap: 12 },
+
+  // ── Intelligence panel ──
+  intelligencePanel: { marginTop: 4, padding: 16, borderRadius: 16, borderWidth: 1, gap: 12 },
   intelligenceTitle: { fontSize: 15, marginBottom: 4 },
   intelligenceRows: { gap: 12 },
   intelligenceRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   intelligenceIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   intelligenceText: { flex: 1, fontSize: 13, lineHeight: 19 },
+
+  // ── Sticky "What Can I Make?" panel ──
+  stickyPanel: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  stickyPanelInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  stickyPanelLeft: { flexDirection: "row", alignItems: "center" },
+  stickyPanelRight: { flexDirection: "row", alignItems: "center", gap: 4 },
+  stickyPanelTitle: { fontSize: 15 },
+  stickyPanelSub: { fontSize: 12, marginTop: 1 },
+  stickyPanelSeeAll: { fontSize: 12 },
+
+  // ── Bottom sheet ──
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: SCREEN_HEIGHT * 0.65,
+    paddingTop: 12,
+    paddingBottom: 0,
+    shadowColor: "#2B7FFF",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+  },
+  sheetTitle: { fontSize: 18 },
+  sheetCountPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  sheetCountText: { fontSize: 12 },
+  sheetGroup: { paddingHorizontal: 16, marginBottom: 4 },
+  sheetGroupLabel: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  sheetRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+  },
+  sheetRowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetRowName: { fontSize: 14, marginBottom: 2 },
+  sheetRowMeta: { fontSize: 12, lineHeight: 16 },
+  sheetScore: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  sheetScoreText: { fontSize: 12 },
+
+  // ── Modals ──
   modal: { flex: 1, padding: 24 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
   modalTitle: { fontSize: 22, marginBottom: 20 },

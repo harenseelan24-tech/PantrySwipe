@@ -1,0 +1,777 @@
+# PANTRYSWIPE — UI/UX COMPLETE OVERHAUL PATCH
+## Design Redesign Prompt for Replit Agent
+
+> Apply this patch on top of the existing PantrySwipe codebase. This is a full visual redesign targeting the Home/Discover screen and the Pantry screen. Do not change any functionality — only redesign the UI/UX.
+
+---
+
+## GLOBAL DESIGN SYSTEM CHANGES (Apply everywhere)
+
+### KILL THE GREEN. COMPLETELY.
+
+Remove every instance of the current dark green colour palette (`#1a2e1a`, `#0d1f0d`, `#1e3a2f`, or any green-tinted dark background). Replace with the new white-and-blue system below.
+
+### NEW COLOUR PALETTE
+
+```css
+:root {
+  /* Backgrounds */
+  --bg-primary: #FFFFFF;           /* Main page background — pure white */
+  --bg-secondary: #F0F6FF;         /* Subtle blue-tinted off-white for cards, inputs */
+  --bg-tertiary: #E3EEFF;          /* Slightly deeper blue tint for section separators */
+
+  /* Brand Blues */
+  --blue-primary: #2B7FFF;         /* Main CTA, active icons, key accents */
+  --blue-light: #EBF3FF;           /* Chip backgrounds, tag backgrounds */
+  --blue-mid: #5A9FFF;             /* Hover states, secondary buttons */
+  --blue-dark: #1A56DB;            /* Pressed states, dark text on blue */
+
+  /* Text */
+  --text-primary: #0F1C2E;         /* Near-black for headings */
+  --text-secondary: #4A5568;       /* Subtext, labels */
+  --text-muted: #94A3B8;           /* Placeholder text, disabled */
+  --text-on-blue: #FFFFFF;         /* White text on blue backgrounds */
+
+  /* Status colours */
+  --status-fresh: #10B981;         /* Green dot — fresh item */
+  --status-warn: #F59E0B;          /* Amber dot — use soon */
+  --status-critical: #EF4444;      /* Red dot — expiring */
+  --status-expired: #94A3B8;       /* Grey — expired */
+
+  /* UI Elements */
+  --border-light: #E2EAFF;         /* Card borders */
+  --shadow-card: 0 2px 16px rgba(43, 127, 255, 0.08);   /* Soft blue shadow on cards */
+  --shadow-heavy: 0 8px 32px rgba(43, 127, 255, 0.15);  /* Swipe card shadow */
+
+  /* Bottom Nav */
+  --nav-bg: #FFFFFF;
+  --nav-border: #E2EAFF;
+  --nav-active: #2B7FFF;
+  --nav-inactive: #94A3B8;
+}
+```
+
+### TYPOGRAPHY (Keep Inter + Playfair Display from Google Fonts)
+
+```css
+/* Headings: Playfair Display, semi-bold */
+h1 { font: 700 28px/1.2 'Playfair Display', serif; color: var(--text-primary); }
+h2 { font: 600 22px/1.3 'Playfair Display', serif; color: var(--text-primary); }
+
+/* Body / UI: Inter */
+body { font: 400 15px/1.5 'Inter', sans-serif; color: var(--text-secondary); }
+.label { font: 500 13px/1 'Inter', sans-serif; color: var(--text-muted); letter-spacing: 0.02em; }
+.caption { font: 400 12px/1.4 'Inter', sans-serif; color: var(--text-muted); }
+```
+
+### GLOBAL COMPONENT STYLES
+
+```css
+/* Cards */
+.card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Chips / Tags */
+.chip {
+  background: var(--blue-light);
+  color: var(--blue-primary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: 500 13px 'Inter', sans-serif;
+}
+.chip.active {
+  background: var(--blue-primary);
+  color: white;
+}
+
+/* Primary Button */
+.btn-primary {
+  background: var(--blue-primary);
+  color: white;
+  border-radius: 14px;
+  padding: 14px 24px;
+  font: 600 16px 'Inter', sans-serif;
+  box-shadow: 0 4px 14px rgba(43, 127, 255, 0.35);
+}
+
+/* Bottom Navigation */
+.bottom-nav {
+  background: white;
+  border-top: 1px solid var(--border-light);
+  backdrop-filter: blur(12px);
+}
+```
+
+---
+
+## SCREEN 1 — HOME / DISCOVER (Complete Redesign)
+
+### CURRENT PROBLEMS TO FIX:
+- Dark green background looks like a food delivery app, not a clean pantry app
+- The X / Heart / Save buttons at the bottom take up space and look cluttered
+- The swipe card is too small — not immersive like Tinder
+- The AI Chef button placement is not defined / awkwardly placed
+- The "Spinach expiring soon" banner looks like a warning label, not helpful UI
+- The occasion chips look cramped and dark
+
+---
+
+### NEW HOME SCREEN LAYOUT (Top to Bottom)
+
+#### TOP BAR
+
+```
+[Padding: 20px sides, 16px top]
+
+Left side:
+  - Greeting text: "Morning, Alex 👋" — 13px Inter Medium, --text-muted
+  - Below: "What are we cooking?" — 26px Playfair Display Bold, --text-primary
+
+Right side (horizontal row of 3 icon buttons):
+  [AI Chef Button] [Notification Bell] [Avatar]
+
+  AI Chef Button:
+    - Circular button, 40x40px
+    - Background: linear-gradient(135deg, #2B7FFF, #5A9FFF)
+    - Icon: chef hat SVG (white, 20px) — from Lucide or custom SVG
+    - Box shadow: 0 4px 12px rgba(43,127,255,0.4)
+    - On tap: opens AI Chef assistant sheet from bottom
+
+  Notification Bell:
+    - Circular button, 40x40px
+    - Background: var(--bg-secondary) (#F0F6FF)
+    - Icon: Lucide `Bell`, 20px, --blue-primary
+    - If unread: small red dot top-right of icon
+
+  Avatar:
+    - Circular, 40x40px
+    - Show user profile picture or initials in blue circle
+    - Border: 2px solid var(--blue-light)
+```
+
+---
+
+#### SEARCH BAR
+
+```
+[Full width, 16px margins, 12px below top bar]
+
+- Background: var(--bg-secondary) — #F0F6FF
+- Border: 1px solid var(--border-light)
+- Border radius: 14px
+- Height: 46px
+- Left icon: Lucide `Search`, 18px, --text-muted
+- Placeholder: "Search recipes, ingredients, cuisine..." — --text-muted
+- Right icon: Lucide `SlidersHorizontal` (filter) — --blue-primary
+- NO dark background. Light blue-tinted input.
+```
+
+---
+
+#### OCCASION CHIPS
+
+```
+[Horizontal scroll row, no scrollbar visible, 16px left padding, 10px gap between chips]
+[8px below search bar]
+
+Chips (all same height: 36px):
+  🍽️ Just Me
+  💑 Date Night
+  👨‍👩‍👧 Family
+  👯 Friends
+  🎬 Movie Night
+  🏈 Watch Party
+  🎂 Birthday
+  🥗 Meal Prep
+
+DEFAULT state:
+  background: var(--bg-secondary) — #F0F6FF
+  border: 1px solid var(--border-light)
+  color: var(--text-secondary)
+  border-radius: 999px
+  padding: 8px 14px
+  font: 500 13px Inter
+
+ACTIVE state:
+  background: var(--blue-primary) — #2B7FFF
+  color: white
+  border: none
+  box-shadow: 0 4px 10px rgba(43,127,255,0.3)
+
+Smooth transition: 200ms ease on background, box-shadow, color
+```
+
+---
+
+#### EXPIRY ALERT BANNER
+
+```
+[Full width with 16px margin, 10px below chips]
+[ONLY show if item expiring within 2 days — otherwise hide this entire section]
+
+Design:
+  background: #FFF8EB  (warm amber tint)
+  border: 1px solid #FDE68A
+  border-left: 4px solid #F59E0B  (amber left accent)
+  border-radius: 14px
+  padding: 12px 16px
+  height: auto (single line)
+
+Content:
+  Left: ⚠️ emoji (18px)
+  Text: "[Item name] is expiring soon — cook it up!" 
+        "[Item name]" in bold --text-primary
+        rest in --text-secondary, 14px Inter
+  Right: "See recipes →" link in --blue-primary, 13px semi-bold, underline on hover
+
+No red background. No warning-sign look. Keep it warm and helpful, not alarming.
+```
+
+---
+
+#### SWIPE CARD — THE MAIN EVENT (Full Redesign)
+
+**This is the hero element. Make it BIG and immersive.**
+
+```
+[Card fills the width with 16px margins on each side]
+[Card height: 72vh (72% of viewport height) — large, like Tinder]
+[Border radius: 28px]
+[overflow: hidden]
+[box-shadow: var(--shadow-heavy)]
+[margin-top: 12px]
+
+CARD STRUCTURE (layered):
+
+Layer 1 — Food Photo:
+  - Full bleed, fills entire card
+  - object-fit: cover
+  - High quality image
+
+Layer 2 — Gradient Overlay:
+  - position: absolute, inset 0
+  - background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 40%,
+      rgba(10, 20, 40, 0.4) 65%,
+      rgba(10, 20, 40, 0.85) 100%
+    )
+  - This creates a dark-at-bottom gradient for text legibility
+
+Layer 3 — Top badges (position: absolute, top: 16px):
+  Left: Cuisine badge
+    background: rgba(255,255,255,0.15)
+    backdrop-filter: blur(8px)
+    border: 1px solid rgba(255,255,255,0.25)
+    border-radius: 999px
+    padding: 6px 12px
+    color: white
+    font: 500 12px Inter
+    text: "🇮🇹 Italian"
+
+  Right: Difficulty badge
+    background: var(--blue-primary)
+    border-radius: 999px
+    padding: 6px 12px
+    color: white
+    font: 600 12px Inter
+    text: "Medium" or "Easy" or "Hard"
+
+Layer 4 — Pantry Match badge (position: absolute, top: 16px, center):
+  HIDDEN by default — only show on last 1-2 cards in stack
+
+Layer 5 — Bottom info panel (position: absolute, bottom: 0, full width):
+  padding: 20px 20px 24px 20px
+
+  Row 1: Match indicator
+    - "✓ 87% pantry match" 
+    - Small pill: background rgba(16,185,129,0.2), border 1px solid rgba(16,185,129,0.4)
+    - Text: white, 12px Inter Medium
+    - Icon: checkmark in green
+
+  Row 2: Recipe Name
+    - "Spaghetti Carbonara"
+    - font: 700 26px Playfair Display
+    - color: white
+    - margin: 6px 0
+
+  Row 3: Meta row (horizontal, gap 12px)
+    - "Italian" | "⏱ 30m" | "🔥 620 kcal" | "⭐ 4.8"
+    - color: rgba(255,255,255,0.75)
+    - font: 13px Inter
+    - Separator: "·" between items
+
+  Row 4: Pantry tag row
+    - Pill 1: "✓ 5/6 in pantry" — green tinted pill
+    - Pill 2: "+1 to buy" — amber tinted pill
+    - Pills: background rgba(255,255,255,0.12), border 1px solid rgba(255,255,255,0.2)
+    - font: 12px Inter Medium, color: white
+
+SWIPE OVERLAYS (show during drag):
+  Swiping Right → Green overlay (rgba(16,185,129,0.25)) + "COOK THIS ✓" text stamp (rotated -15deg, top-left of card, white, 28px bold, outlined)
+  Swiping Left  → Red overlay (rgba(239,68,68,0.2)) + "NOPE ✗" text stamp (rotated 15deg, top-right, white, 28px bold, outlined)  
+  Swiping Up    → Blue overlay (rgba(43,127,255,0.2)) + "SAVED 🔖" text stamp (centered, white, 28px bold)
+
+CARD STACK EFFECT:
+  Behind the front card, show 2 ghost cards:
+  Card 2: scale(0.94), translateY(12px), opacity 0.6
+  Card 3: scale(0.88), translateY(24px), opacity 0.3
+  These should animate forward as user swipes the top card
+```
+
+---
+
+#### SWIPE INSTRUCTION ROW (Below the card — REPLACES X/HEART/SAVE buttons)
+
+**Remove the X, Heart, and Save circle buttons entirely.**
+
+Instead, show a minimal text hint row:
+
+```
+[Below card, 12px margin-top]
+[Full width, centered]
+[Row of 3 directional hints]
+
+Layout: flex row, justify-between, padding 0 24px
+
+Left hint:
+  Icon: ← arrow (Lucide ArrowLeft, 16px, #EF4444)
+  Text: "Skip" — 12px Inter, --text-muted
+
+Center hint:
+  Icon: ↑ arrow (Lucide ArrowUp, 16px, --blue-primary)
+  Text: "Save" — 12px Inter, --text-muted
+
+Right hint:
+  Icon: → arrow (Lucide ArrowRight, 16px, #10B981)
+  Text: "Cook this" — 12px Inter, --text-muted
+
+These are HINT LABELS ONLY — not tappable buttons. The swiping is done on the card itself.
+Only show on first launch (or first session). After 3 sessions, hide the hints entirely.
+Users swipe on the card directly — the full card is the interactive element.
+```
+
+---
+
+#### BOTTOM NAVIGATION BAR
+
+```
+background: white
+border-top: 1px solid var(--border-light)
+height: 72px
+padding: 8px 0 16px 0
+display: flex, 5 items, space-around
+
+5 Tabs:
+  🏠 Discover
+  🥦 Pantry
+  🔥 Swipe (center — slightly larger icon, 28px vs 22px for others)
+  📅 Planner
+  👤 Social
+
+Active tab:
+  Icon: var(--blue-primary), filled variant if available
+  Label: var(--blue-primary), 11px Inter SemiBold
+  Indicator: 3px wide, 3px tall rounded pill above icon, var(--blue-primary)
+
+Inactive tab:
+  Icon: var(--nav-inactive) = #94A3B8
+  Label: #94A3B8, 11px Inter Regular
+```
+
+---
+
+## SCREEN 2 — MY PANTRY (Complete Redesign)
+
+### CURRENT PROBLEMS TO FIX:
+- Dark green background and dark cards look oppressive
+- Pantry items are too close together — the emoji/icon column overlaps the text
+- There's no "What Can I Make?" button visible / well-designed
+- Status badges (Fresh, Use Soon, Expiring) look fine but need blue-white theming
+- No clear visual hierarchy between items
+- The category tab row isn't shown clearly
+
+---
+
+### NEW PANTRY SCREEN LAYOUT (Top to Bottom)
+
+#### TOP SECTION
+
+```
+[Background: white, no dark background]
+[Padding: 20px sides, 20px top]
+
+Left:
+  "My Pantry" — 28px Playfair Display Bold, --text-primary
+  "20 items tracked" — 13px Inter, --text-muted
+
+Right (icon buttons row, gap 10px):
+  Camera/Scan button:
+    40x40px circle
+    background: var(--bg-secondary)
+    border: 1px solid var(--border-light)
+    icon: Lucide `ScanLine`, 20px, --blue-primary
+  
+  Add (+) button:
+    40x40px circle
+    background: var(--blue-primary)
+    icon: Lucide `Plus`, 20px, white
+    box-shadow: 0 4px 12px rgba(43,127,255,0.35)
+```
+
+---
+
+#### SEARCH BAR
+
+```
+[Same design as Home screen search — consistent]
+[16px margins, 12px below header]
+background: var(--bg-secondary)
+border: 1px solid var(--border-light)
+border-radius: 14px
+height: 46px
+Left: Lucide Search icon, --text-muted
+Placeholder: "Search pantry..."
+Right: Lucide SlidersHorizontal, --blue-primary (opens filter sheet)
+```
+
+---
+
+#### EXPIRY ALERT BANNER (conditional)
+
+```
+[Show ONLY if 1+ items expiring within 3 days]
+[Full width, 16px margin, 8px below search]
+
+background: #FFF1F2 (light red tint)
+border: 1px solid #FECACA
+border-left: 4px solid #EF4444
+border-radius: 12px
+padding: 10px 14px
+
+Content:
+  Left: ⚠️ icon (16px)
+  Text: "1 item expiring soon" — 14px Inter SemiBold, #EF4444
+  Right: "View →" — 13px Inter Medium, --blue-primary (filters list to expiring items)
+```
+
+---
+
+#### CATEGORY FILTER TABS
+
+```
+[Horizontal scroll, 16px left padding, 8px gap, 10px below expiry banner]
+[No scrollbar]
+
+Category chips (36px height, pill shape):
+  All | 🥛 Dairy | 🥚 Eggs | 🥩 Meat | 🥦 Veg | 🍎 Fruit | 🌾 Grains | 🥫 Canned | 🧂 Condiments | ❄️ Frozen | 🍷 Drinks | 🍫 Snacks
+
+DEFAULT chip: background #F0F6FF, color --text-secondary, border 1px solid --border-light
+ACTIVE chip: background --blue-primary, color white, no border
+Height: 34px, padding: 0 14px, border-radius: 999px, font: 500 13px Inter
+```
+
+---
+
+#### PANTRY ITEMS LIST
+
+**Critical fix: The icon/emoji must NOT overlap with text. Give everything proper spacing.**
+
+```
+[List begins 12px below category tabs]
+[Each item is its own card with proper padding]
+
+ITEM CARD STRUCTURE:
+  background: white
+  border: 1px solid var(--border-light)
+  border-radius: 16px
+  margin: 0 16px 10px 16px
+  padding: 14px 16px
+  display: flex
+  align-items: center
+  gap: 14px
+  min-height: 72px
+  box-shadow: 0 1px 6px rgba(43,127,255,0.06)
+
+  [Column 1 — Icon container]
+    width: 48px
+    height: 48px
+    min-width: 48px       ← CRITICAL: prevents shrinking/overlap
+    border-radius: 12px
+    background: var(--bg-secondary)
+    display: flex, align-items: center, justify-content: center
+    Font size of emoji: 24px
+
+  [Column 2 — Text info] (flex: 1, overflow: hidden)
+    Row 1: Item name — 15px Inter SemiBold, --text-primary
+    Row 2: "200 g · Fridge" — 13px Inter, --text-muted
+    [No text overflow — ensure truncation with text-overflow: ellipsis if needed]
+
+  [Column 3 — Status + Delete]
+    display: flex
+    flex-direction: column
+    align-items: flex-end
+    gap: 8px
+    min-width: 90px      ← CRITICAL: reserve fixed width for badge + icon
+
+    Status Badge:
+      border-radius: 999px
+      padding: 4px 10px
+      font: 500 11px Inter
+      
+      "Fresh"    → background: #ECFDF5, color: #059669, dot: #10B981
+      "Use Soon" → background: #FFFBEB, color: #D97706, dot: #F59E0B
+      "Expiring" → background: #FEF2F2, color: #DC2626, dot: #EF4444
+      "Expired"  → background: #F9FAFB, color: #6B7280, dot: #9CA3AF
+
+      Badge layout: "● Fresh" — dot (6px circle) + space + text
+    
+    Delete icon:
+      Lucide `Trash2`, 16px, --text-muted
+      On hover/press: color changes to #EF4444
+      Tap → confirm dialog before delete
+```
+
+**EXAMPLE ITEM CARDS (reference for agent):**
+
+```
+┌──────────────────────────────────────────────┐
+│  [🥚]   Eggs                      ● Fresh   │
+│  48px   6 pieces · Fridge         [🗑]       │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
+│  [🧈]   Butter                    ● Fresh   │
+│  48px   200 g · Fridge            [🗑]       │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
+│  [🥛]   Milk                   ● Use Soon   │
+│  48px   500 ml · Fridge           [🗑]       │
+└──────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────┐
+│  [🥬]   Spinach                 ● Expiring  │
+│  48px   150 g · Fridge            [🗑]       │
+└──────────────────────────────────────────────┘
+```
+
+---
+
+#### "WHAT CAN I MAKE?" STICKY PANEL (Bottom of screen, above nav bar)
+
+```
+This is a persistent sticky panel anchored above the bottom navigation bar.
+It must NOT scroll with the list — it stays fixed.
+
+COLLAPSED STATE (default):
+  position: sticky, bottom: 72px (above nav bar)
+  background: white
+  border-top: 1px solid var(--border-light)
+  padding: 12px 20px
+  
+  Layout: full width flex row
+    Left side:
+      "🍳" emoji (20px)
+      "What Can I Make?" — 15px Inter SemiBold, --text-primary
+      Below: "14 dishes with your pantry" — 12px Inter, --text-muted
+
+    Right side:
+      Lucide `ChevronUp` icon (20px, --blue-primary)
+      "See all" — 12px Inter Medium, --blue-primary
+
+  Entire row is tappable → expands to EXPANDED STATE
+
+EXPANDED STATE (tapping the panel):
+  The panel slides UP to cover ~60% of the screen (like a bottom sheet)
+  background: white
+  border-radius: 24px 24px 0 0 at top
+  box-shadow: 0 -4px 24px rgba(43,127,255,0.12)
+
+  Handle bar: 4px × 36px rounded pill, #CBD5E1, centered at top
+
+  Header row:
+    "What Can I Make?" — 18px Playfair Display Bold
+    "14 dishes" chip — blue pill
+    Close button (X) right side
+
+  Below header: grouped list of dishes
+
+  GROUPED SECTIONS (scrollable):
+    Section header: "⚡ Quick & Easy (under 20 min)" — 11px Inter SemiBold uppercase, --text-muted
+    
+    DISH ROW ITEM:
+      background: var(--bg-secondary)
+      border-radius: 14px
+      padding: 14px 16px
+      margin-bottom: 8px
+      display: flex, align-items: center
+
+      Left: Food emoji or small thumbnail (40x40px rounded-lg)
+      Center (flex:1):
+        Dish name — 14px Inter SemiBold, --text-primary
+        "5/5 ingredients · 25 min · 420 kcal" — 12px Inter, --text-muted
+      Right:
+        Pantry match pill: "✓ 100%" — green if full match, amber if partial
+        Lucide `ChevronRight`, 16px, --text-muted
+
+      ↑ THE ENTIRE ROW IS TAPPABLE
+
+    Sections:
+      ⚡ Quick & Easy
+      💪 High Protein
+      🥗 Light & Healthy
+      🍲 Comfort Food
+      🌱 Plant-Based (if applicable)
+
+DISH ROW TAP → RECIPE DETAIL SCREEN:
+  When user taps a dish in the "What Can I Make?" list:
+  Opens the full Recipe Detail sheet (sliding up modal)
+  Shows:
+    - Full bleed hero image
+    - Recipe name + meta (time, kcal, servings)
+    - Macro panel (Protein / Carbs / Fat / Fibre) in circular chart
+    - Ingredients list:
+        ✅ Items you already have (green checkmark, greyed-out quantity)
+        🛒 Items you need to buy (orange cart icon, bold)
+        "You have everything!" OR "You need to buy: [item list]"
+    - Step-by-step cooking instructions:
+        Numbered steps, large readable text (16px)
+        Timer buttons inline: "⏱ Start 8 min timer"
+        Steps can be ticked off as done
+    - "Start Cooking" button at bottom (full width, --blue-primary)
+    - "Add missing to shopping list" button if any items missing
+```
+
+---
+
+## AI CHEF BUTTON — DETAILED SPEC
+
+```
+Location: Top bar of Home screen, leftmost of the 3 right-side icon buttons.
+Order (left to right): [AI Chef] [Bell] [Avatar]
+
+Button appearance:
+  40 × 40px circle
+  background: linear-gradient(135deg, #2B7FFF 0%, #60A5FA 100%)
+  icon: Chef hat SVG — white, 20px
+  box-shadow: 0 4px 14px rgba(43,127,255,0.45)
+  
+  Subtle pulse animation on idle:
+    @keyframes pulse-blue {
+      0%, 100% { box-shadow: 0 4px 14px rgba(43,127,255,0.45); }
+      50%       { box-shadow: 0 4px 22px rgba(43,127,255,0.7); }
+    }
+    animation: pulse-blue 2.5s ease-in-out infinite;
+
+On tap → opens AI Chef bottom sheet:
+  background: white
+  border-radius: 24px 24px 0 0
+  height: 70vh
+  
+  Header:
+    "👨‍🍳 AI Chef" — 20px Playfair Display Bold
+    "Powered by Claude" — 11px Inter, --text-muted
+    Close X button right
+
+  Quick action chips (horizontal scroll):
+    "What's expiring?" | "Surprise me!" | "High protein ideas" | "Under 20 mins" | "Date night ideas"
+
+  Chat-style input at bottom:
+    Rounded input field, blue send button
+    Placeholder: "Ask me anything about cooking..."
+  
+  Response area: scrollable, Claude's response in chat bubbles
+    User bubble: right-aligned, --blue-primary background, white text
+    Chef bubble: left-aligned, --bg-secondary background, --text-primary text
+    Chef bubble always prefixed with 👨‍🍳 avatar icon
+```
+
+---
+
+## ANIMATIONS & MICRO-INTERACTIONS
+
+```
+All transitions: 200ms ease unless specified
+
+1. Chip tap: scale(0.95) on press, then spring back
+2. Card swipe: 
+   - Drag: rotate proportional to horizontal drag (max ±15deg)
+   - Release like: translateX(120vw) + rotate(20deg), 350ms ease-out
+   - Release dislike: translateX(-120vw) + rotate(-20deg), 350ms ease-out
+   - Release save: translateY(-100vh), 350ms ease-out
+   - Next card: scale(1) from scale(0.94), translateY(0) from translateY(12px), 300ms ease-out
+3. Pantry item card: 
+   - On add: slide in from right, 300ms ease-out
+   - On delete: slide out right, height collapses, 250ms ease
+4. "What Can I Make?" panel:
+   - Expand: translateY from 100% to 0, 350ms cubic-bezier(0.16, 1, 0.3, 1) (spring-like)
+   - Handle drag to dismiss supported
+5. Status badge:
+   - On item expiry change: badge pulses once (scale 1.1 → 1), 400ms
+6. Page transitions:
+   - Between tabs: fade + subtle scale (0.97 → 1), 200ms ease
+```
+
+---
+
+## LOADING STATES
+
+```
+Every list must show shimmer skeletons before data loads.
+
+Skeleton style:
+  background: linear-gradient(90deg, #F0F6FF 25%, #E3EEFF 50%, #F0F6FF 75%)
+  background-size: 200% 100%
+  animation: shimmer 1.4s infinite linear
+  border-radius: matches the real component's radius
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+Pantry skeleton: 6 rows of 72px height skeleton cards
+Swipe card skeleton: full card area in shimmer
+Dish list skeleton: 8 rows of 64px shimmer rows
+```
+
+---
+
+## THINGS TO ABSOLUTELY NOT DO
+
+1. ❌ Do NOT use any dark green backgrounds anywhere
+2. ❌ Do NOT add X, Heart, or Save circle buttons below the swipe card
+3. ❌ Do NOT let emoji/icons overlap text in the pantry list
+4. ❌ Do NOT place the AI Chef button anywhere except next to the notification bell in the top bar
+5. ❌ Do NOT make the swipe card small — it must dominate the screen (72vh)
+6. ❌ Do NOT use grey card backgrounds — use white or #F0F6FF only
+7. ❌ Do NOT use any box shadows with green or dark tints
+8. ❌ Do NOT use a scrollable swipe instruction row — just directional hint text
+9. ❌ Do NOT open a new page for the "What Can I Make?" list — it must be a bottom sheet
+10. ❌ Do NOT open a new page for Recipe Detail from the dish list — it must be a modal/sheet
+
+---
+
+## SUMMARY OF ALL CHANGES
+
+| Area | Before | After |
+|------|--------|-------|
+| App colour scheme | Dark green | White + Blue (#2B7FFF) |
+| Swipe card size | ~40vh, small | 72vh, full immersive |
+| Swipe action buttons | X / Heart / Save circles | Removed; directional text hints only |
+| AI Chef button | Missing / badly placed | In top bar, left of bell, gradient blue circle |
+| Pantry item layout | Icon overlaps text | Fixed-width 48px icon column, proper spacing |
+| Pantry "What Can I Make?" | Unclear | Sticky bottom panel → bottom sheet → recipe detail |
+| Recipe detail from pantry | Unknown | Full modal sheet with ingredients/macros/steps |
+| Backgrounds | Dark green cards | White cards, #F0F6FF secondary bg |
+| Shadows | Dark | Soft blue-tinted shadows |
+| Category chips | Dark themed | Light blue (#F0F6FF) → active blue (#2B7FFF) |
+| Typography | Unclear hierarchy | Playfair Display headings + Inter body |
+| Loading states | None specified | Blue shimmer skeletons throughout |
+| Animations | Basic | Swipe physics, spring panel, micro-interactions |
