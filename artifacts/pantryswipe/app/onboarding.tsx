@@ -1,6 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import {
-  Alert,
   Animated,
   Dimensions,
   Modal,
@@ -15,10 +14,12 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import * as ImagePicker from "expo-image-picker";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
+import ScanFridgeModal from "@/components/ScanFridgeModal";
+import ScanReceiptModal from "@/components/ScanReceiptModal";
+import ConfirmationEditScreen from "@/components/ConfirmationEditScreen";
+import type { DetectedItem, ScanSource } from "@/types/scanning";
 
 const { width, height: screenHeight } = Dimensions.get("window");
 const TOTAL_STEPS = 9;
@@ -253,158 +254,65 @@ export default function OnboardingScreen() {
   const [cuisineError, setCuisineError] = useState(false);
 
   // ── Camera / Pantry-flow state ──────────────────────────────────────────────
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [showPermModal, setShowPermModal] = useState(false);
-  const [pendingFlow, setPendingFlow] = useState<PantryFlow>(null);
-  const [showCamera, setShowCamera] = useState(false);
-  const [activeFlow, setActiveFlow] = useState<PantryFlow>(null);
-  const [scanItems, setScanItems] = useState<ScanItem[]>([]);
-  const [scanReading, setScanReading] = useState(false);
-  const [showReview, setShowReview] = useState(false);
-  const [reviewTitle, setReviewTitle] = useState("");
-  const [reviewItems, setReviewItems] = useState<ScanItem[]>([]);
+  const [showScanFridge, setShowScanFridge] = useState(false);
+  const [showScanReceipt, setShowScanReceipt] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmItems, setConfirmItems] = useState<DetectedItem[]>([]);
+  const [confirmSource, setConfirmSource] = useState<ScanSource>("fridge-scan");
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualName, setManualName] = useState("");
   const [manualQty, setManualQty] = useState("1");
   const [manualUnit, setManualUnit] = useState("pieces");
   const [manualCategory, setManualCategory] = useState("Produce");
-  const [manualAdded, setManualAdded] = useState<ScanItem[]>([]);
+  const [manualAdded, setManualAdded] = useState<DetectedItem[]>([]);
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
-  const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const scanIndexRef = useRef(0);
-
-  // Scan line animation (react-native-reanimated, avoids conflict with RN Animated)
-  const scanLineAnim = useRef(new Animated.Value(0)).current;
-  const scanLineStyle = { transform: [{ translateY: scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [0, screenHeight * 0.55] }) }] };
-
-  const stopScanTimer = useCallback(() => {
-    if (scanTimerRef.current) { clearInterval(scanTimerRef.current); scanTimerRef.current = null; }
-  }, []);
-
-  useEffect(() => {
-    if (showCamera && activeFlow === "fridge") {
-      scanLineAnim.setValue(0);
-      Animated.loop(Animated.timing(scanLineAnim, { toValue: 1, duration: 2000, useNativeDriver: true })).start();
-      scanIndexRef.current = 0;
-      setScanItems([]);
-      scanTimerRef.current = setInterval(() => {
-        setScanItems((prev) => {
-          if (scanIndexRef.current < MOCK_FRIDGE_ITEMS.length) {
-            const next = MOCK_FRIDGE_ITEMS[scanIndexRef.current];
-            scanIndexRef.current++;
-            return [...prev, next];
-          }
-          return prev;
-        });
-      }, 2500);
-    } else {
-      stopScanTimer();
-    }
-    return () => stopScanTimer();
-  }, [showCamera, activeFlow]);
-
-  const openCameraFlow = useCallback((flow: "fridge" | "receipt") => {
-    setActiveFlow(flow); setScanItems([]); setScanReading(false); setShowCamera(true);
-  }, []);
 
   const handlePantryOption = useCallback((id: string) => {
-    if (id === "scan" || id === "receipt") {
-      const flow = id === "scan" ? "fridge" : "receipt";
-      if (cameraPermission?.granted) { openCameraFlow(flow); }
-      else { setPendingFlow(flow); setShowPermModal(true); }
-    } else if (id === "type") {
+    if (id === "scan") { setShowScanFridge(true); }
+    else if (id === "receipt") { setShowScanReceipt(true); }
+    else if (id === "type") {
       setManualAdded([]); setManualName(""); setManualQty("1"); setShowManualEntry(true);
     } else if (id === "skip") {
       setShowSkipConfirm(true);
     }
-  }, [cameraPermission, openCameraFlow]);
-
-  const handleAllowCamera = useCallback(async () => {
-    setShowPermModal(false);
-    if (Platform.OS === "web") {
-      try {
-        await (navigator as Navigator & { mediaDevices: MediaDevices }).mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        if (pendingFlow && pendingFlow !== "manual") openCameraFlow(pendingFlow);
-      } catch {
-        Alert.alert("Camera Denied", "Please allow camera access in your browser settings.");
-      }
-    } else {
-      const result = await requestCameraPermission();
-      if (result.granted && pendingFlow && pendingFlow !== "manual") { openCameraFlow(pendingFlow); }
-      else if (!result.granted && !result.canAskAgain) {
-        Alert.alert("Camera Access Required", "Go to Settings → PantrySwipe → Camera → Allow.");
-      }
-    }
-  }, [pendingFlow, openCameraFlow, requestCameraPermission]);
-
-  const handleDoneScan = useCallback(() => {
-    stopScanTimer(); setShowCamera(false);
-    setReviewTitle("Here's what we found 👀");
-    setReviewItems([...scanItems]);
-    setShowReview(true);
-  }, [scanItems, stopScanTimer]);
-
-  const handleReceiptCapture = useCallback(() => {
-    setScanReading(true);
-    setTimeout(() => {
-      setScanReading(false); setShowCamera(false);
-      setReviewTitle("Items from your receipt 🧾");
-      setReviewItems([...MOCK_RECEIPT_ITEMS]);
-      setShowReview(true);
-    }, 2000);
   }, []);
 
-  const handleReceiptGallery = useCallback(async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
-    if (!result.canceled) {
-      setShowCamera(false); setScanReading(true);
-      setTimeout(() => {
-        setScanReading(false);
-        setReviewTitle("Items from your receipt 🧾");
-        setReviewItems([...MOCK_RECEIPT_ITEMS]);
-        setShowReview(true);
-      }, 2000);
-    }
+  const handleScanFridgeDone = useCallback((items: DetectedItem[]) => {
+    setShowScanFridge(false);
+    setConfirmItems(items);
+    setConfirmSource("fridge-scan");
+    setShowConfirm(true);
   }, []);
 
-  const confirmReview = useCallback(() => {
-    reviewItems.forEach((item) => {
-      addToPantry({
-        id: `${Date.now()}${Math.random().toString(36).substr(2, 5)}`,
-        name: item.name,
-        quantity: parseFloat(item.qty) || 1,
-        unit: item.unit,
-        category: (["Fridge","Freezer","Pantry","Spices","Sauces","Beverages","Produce"].includes(item.category) ? item.category : "Produce") as "Fridge"|"Freezer"|"Pantry"|"Spices"|"Sauces"|"Beverages"|"Produce",
-        status: "Fresh",
-        emoji: item.emoji,
-      });
-    });
-    setShowReview(false);
-    goNext();
-  }, [reviewItems, addToPantry]);
+  const handleScanReceiptDone = useCallback((items: DetectedItem[]) => {
+    setShowScanReceipt(false);
+    setConfirmItems(items);
+    setConfirmSource("receipt-scan");
+    setShowConfirm(true);
+  }, []);
 
   const addManualItem = useCallback(() => {
     if (!manualName.trim()) return;
     const emojis: Record<string, string> = { Produce: "🥦", Dairy: "🥛", Meat: "🍗", Grains: "🍞", Condiments: "🫙", Sauces: "🍶", Spices: "🧂", Beverages: "🥤", Snacks: "🍿", Frozen: "🧊" };
     setManualAdded((prev) => [...prev, {
-      id: `m${Date.now()}`, emoji: emojis[manualCategory] || "🍽️",
-      name: manualName.trim(), qty: manualQty, unit: manualUnit, category: manualCategory,
+      id: `m${Date.now()}`,
+      emoji: emojis[manualCategory] || "🍽️",
+      name: manualName.trim(),
+      quantity: parseFloat(manualQty) || 1,
+      unit: manualUnit,
+      category: manualCategory.toLowerCase(),
+      location: "pantry",
     }]);
     setManualName(""); setManualQty("1");
   }, [manualName, manualQty, manualUnit, manualCategory]);
 
-  const confirmManual = useCallback(() => {
-    manualAdded.forEach((item) => {
-      addToPantry({
-        id: `${Date.now()}${Math.random().toString(36).substr(2, 5)}`,
-        name: item.name, quantity: parseFloat(item.qty) || 1, unit: item.unit,
-        category: (["Fridge","Freezer","Pantry","Spices","Sauces","Beverages","Produce"].includes(item.category) ? item.category : "Produce") as "Fridge"|"Freezer"|"Pantry"|"Spices"|"Sauces"|"Beverages"|"Produce",
-        status: "Fresh", emoji: item.emoji,
-      });
-    });
+  const openManualConfirm = useCallback(() => {
+    if (manualAdded.length === 0) return;
     setShowManualEntry(false);
-    goNext();
-  }, [manualAdded, addToPantry]);
+    setConfirmItems(manualAdded);
+    setConfirmSource("manual");
+    setShowConfirm(true);
+  }, [manualAdded]);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
@@ -839,136 +747,7 @@ export default function OnboardingScreen() {
         </View>
       </Modal>
 
-      {/* ── 1. CAMERA PERMISSION MODAL ── */}
-      <Modal visible={showPermModal} transparent animationType="fade" statusBarTranslucent>
-        <View style={pm.overlay}>
-          <View style={[pm.card, { backgroundColor: OB.card, borderColor: OB.border }]}>
-            <Text style={{ fontSize: 40, marginBottom: 12 }}>📷</Text>
-            <Text style={[pm.title, { color: OB.text }]}>Camera Access Needed</Text>
-            <Text style={[pm.body, { color: OB.muted }]}>PantrySwipe needs your camera to identify food items. We don't store any camera footage.</Text>
-            <TouchableOpacity style={[pm.allowBtn, { backgroundColor: OB.blue }]} onPress={handleAllowCamera}>
-              <Text style={pm.allowTxt}>Allow Camera</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pm.notNowBtn} onPress={() => setShowPermModal(false)}>
-              <Text style={[pm.notNowTxt, { color: OB.muted }]}>Not Now</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── 2. CAMERA SCAN MODAL ── */}
-      <Modal visible={showCamera} animationType="slide" statusBarTranslucent>
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
-          {Platform.OS !== "web" ? (
-            <CameraView style={{ flex: 1 }} facing="back">
-              {activeFlow === "fridge" ? (
-                <>
-                  {/* Targeting overlay */}
-                  <View style={cs.targetBox} pointerEvents="none">
-                    <Animated.View style={[cs.scanLine, scanLineStyle]} />
-                  </View>
-                  <Text style={cs.scanInstruction}>Point at food items one by one — hold steady for 2 seconds</Text>
-                  {/* Detected pills */}
-                  <View style={cs.pillsWrap}>
-                    {scanItems.map((item) => (
-                      <View key={item.id} style={[cs.pill, { backgroundColor: OB.blue + "CC" }]}>
-                        <Text style={cs.pillTxt}>{item.emoji} {item.name} · {item.qty} {item.unit}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  {/* Bottom panel */}
-                  <View style={[cs.bottomPanel, { backgroundColor: "#000000BB" }]}>
-                    <Text style={[cs.itemCount, { color: "#fff" }]}>Items detected: {scanItems.length}</Text>
-                    <TouchableOpacity style={[cs.doneBtn, { backgroundColor: OB.blue }]} onPress={handleDoneScan}>
-                      <Text style={cs.doneTxt}>Done Scanning</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { stopScanTimer(); setActiveFlow("receipt"); }}>
-                      <Text style={[cs.switchTxt, { color: OB.muted }]}>Switch to Receipt Scan</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  {/* Receipt frame guide */}
-                  <View style={cs.receiptFrame} pointerEvents="none">
-                    {["tl","tr","bl","br"].map((c) => (
-                      <View key={c} style={[cs.corner, {
-                        top: c.startsWith("t") ? 0 : undefined, bottom: c.startsWith("b") ? 0 : undefined,
-                        left: c.endsWith("l") ? 0 : undefined, right: c.endsWith("r") ? 0 : undefined,
-                        borderTopWidth: c.startsWith("t") ? 3 : 0, borderBottomWidth: c.startsWith("b") ? 3 : 0,
-                        borderLeftWidth: c.endsWith("l") ? 3 : 0, borderRightWidth: c.endsWith("r") ? 3 : 0,
-                      }]} />
-                    ))}
-                  </View>
-                  <Text style={cs.scanInstruction}>Fit your receipt in the frame</Text>
-                  {scanReading ? (
-                    <View style={[cs.bottomPanel, { backgroundColor: "#000000BB", alignItems: "center", gap: 12 }]}>
-                      <Text style={{ fontSize: 32 }}>🧾</Text>
-                      <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>Reading your receipt...</Text>
-                    </View>
-                  ) : (
-                    <View style={[cs.bottomPanel, { backgroundColor: "#000000BB", alignItems: "center", gap: 14 }]}>
-                      <TouchableOpacity style={cs.shutter} onPress={handleReceiptCapture}>
-                        <View style={cs.shutterInner} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={handleReceiptGallery}>
-                        <Text style={[cs.switchTxt, { color: OB.muted }]}>Or upload from gallery</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </>
-              )}
-            </CameraView>
-          ) : (
-            <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 16 }}>
-              <Text style={{ fontSize: 48 }}>{activeFlow === "fridge" ? "📷" : "🧾"}</Text>
-              <Text style={{ color: "#fff", fontSize: 16, textAlign: "center", paddingHorizontal: 40 }}>Camera is only available on a real device.{"\n"}Tap Done to add mock items.</Text>
-              <TouchableOpacity style={[cs.doneBtn, { backgroundColor: OB.blue }]} onPress={activeFlow === "fridge" ? handleDoneScan : handleReceiptCapture}>
-                <Text style={cs.doneTxt}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          {/* Close button */}
-          <TouchableOpacity style={cs.closeBtn} onPress={() => { stopScanTimer(); setShowCamera(false); }}>
-            <Feather name="x" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </Modal>
-
-      {/* ── 3. REVIEW MODAL ── */}
-      <Modal visible={showReview} animationType="slide" statusBarTranslucent>
-        <View style={[rv.container, { backgroundColor: OB.bg }]}>
-          <View style={[rv.header, { borderBottomColor: OB.border, paddingTop: insets.top + 16 }]}>
-            <Text style={[rv.title, { color: OB.text }]}>{reviewTitle}</Text>
-            <Text style={[rv.sub, { color: OB.muted }]}>Edit anything that looks wrong, then add to your pantry.</Text>
-          </View>
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 10 }}>
-            {reviewItems.map((item, i) => (
-              <View key={item.id} style={[rv.row, { backgroundColor: OB.card, borderColor: OB.border }]}>
-                <Text style={{ fontSize: 28, marginRight: 10 }}>{item.emoji}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[rv.itemName, { color: OB.text }]}>{item.name}</Text>
-                  <Text style={[rv.itemMeta, { color: OB.muted }]}>{item.qty} {item.unit} · {item.category}</Text>
-                </View>
-                <TouchableOpacity onPress={() => setReviewItems((prev) => prev.filter((_, idx) => idx !== i))}>
-                  <Feather name="trash-2" size={18} color={OB.error} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={[rv.footer, { borderTopColor: OB.border, paddingBottom: insets.bottom + 16 }]}>
-            <TouchableOpacity
-              style={[rv.addBtn, { backgroundColor: reviewItems.length === 0 ? OB.border : OB.blue }]}
-              onPress={confirmReview}
-              disabled={reviewItems.length === 0}
-            >
-              <Text style={rv.addTxt}>Add {reviewItems.length} Item{reviewItems.length !== 1 ? "s" : ""} to Pantry →</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── 4. MANUAL ENTRY MODAL ── */}
+      {/* ── MANUAL ENTRY MODAL ── */}
       <Modal visible={showManualEntry} animationType="slide" statusBarTranslucent>
         <View style={[me.container, { backgroundColor: OB.bg }]}>
           <View style={[me.header, { borderBottomColor: OB.border, paddingTop: insets.top + 16 }]}>
@@ -990,7 +769,7 @@ export default function OnboardingScreen() {
                 value={manualQty} onChangeText={setManualQty}
               />
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 2 }} contentContainerStyle={{ gap: 6, alignItems: "center" }}>
-                {UNITS.map((u) => (
+                {["pieces","g","kg","ml","L","pack","can","bunch","tbsp","cup"].map((u) => (
                   <TouchableOpacity key={u} style={[me.chip, { backgroundColor: manualUnit === u ? OB.blue : OB.card, borderColor: manualUnit === u ? OB.blue : OB.border }]} onPress={() => setManualUnit(u)}>
                     <Text style={[me.chipTxt, { color: manualUnit === u ? "#fff" : OB.text }]}>{u}</Text>
                   </TouchableOpacity>
@@ -998,7 +777,7 @@ export default function OnboardingScreen() {
               </ScrollView>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {CATEGORIES.map((c) => (
+              {["Produce","Dairy","Meat","Grains","Condiments","Sauces","Spices","Beverages","Snacks","Frozen"].map((c) => (
                 <TouchableOpacity key={c} style={[me.chip, { backgroundColor: manualCategory === c ? OB.blue : OB.card, borderColor: manualCategory === c ? OB.blue : OB.border }]} onPress={() => setManualCategory(c)}>
                   <Text style={[me.chipTxt, { color: manualCategory === c ? "#fff" : OB.text }]}>{c}</Text>
                 </TouchableOpacity>
@@ -1013,7 +792,7 @@ export default function OnboardingScreen() {
                 {manualAdded.map((item, i) => (
                   <View key={item.id} style={[me.addedRow, { backgroundColor: OB.card, borderColor: OB.border }]}>
                     <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
-                    <Text style={[me.addedName, { color: OB.text, flex: 1 }]}>{item.name} · {item.qty} {item.unit}</Text>
+                    <Text style={[me.addedName, { color: OB.text, flex: 1 }]}>{item.name} · {item.quantity} {item.unit}</Text>
                     <TouchableOpacity onPress={() => setManualAdded((prev) => prev.filter((_, idx) => idx !== i))}>
                       <Feather name="x" size={16} color={OB.error} />
                     </TouchableOpacity>
@@ -1025,16 +804,16 @@ export default function OnboardingScreen() {
           <View style={[me.footer, { borderTopColor: OB.border, paddingBottom: insets.bottom + 16 }]}>
             <TouchableOpacity
               style={[me.doneBtn, { backgroundColor: manualAdded.length === 0 ? OB.border : OB.blue }]}
-              onPress={confirmManual}
+              onPress={openManualConfirm}
               disabled={manualAdded.length === 0}
             >
-              <Text style={me.doneTxt}>Done — Add {manualAdded.length} Item{manualAdded.length !== 1 ? "s" : ""} to Pantry</Text>
+              <Text style={me.doneTxt}>Review {manualAdded.length} Item{manualAdded.length !== 1 ? "s" : ""} →</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* ── 5. SKIP CONFIRM MODAL ── */}
+      {/* ── SKIP CONFIRM MODAL ── */}
       <Modal visible={showSkipConfirm} transparent animationType="slide" statusBarTranslucent>
         <View style={pm.overlay}>
           <View style={[pm.card, { backgroundColor: OB.card, borderColor: OB.border }]}>
@@ -1050,6 +829,25 @@ export default function OnboardingScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── REAL AI SCAN MODALS ── */}
+      <ScanFridgeModal
+        visible={showScanFridge}
+        onClose={() => setShowScanFridge(false)}
+        onDone={handleScanFridgeDone}
+      />
+      <ScanReceiptModal
+        visible={showScanReceipt}
+        onClose={() => setShowScanReceipt(false)}
+        onDone={handleScanReceiptDone}
+      />
+      <ConfirmationEditScreen
+        visible={showConfirm}
+        items={confirmItems}
+        source={confirmSource}
+        onClose={() => setShowConfirm(false)}
+        onSuccess={() => { setShowConfirm(false); goNext(); }}
+      />
 
     </View>
   );
