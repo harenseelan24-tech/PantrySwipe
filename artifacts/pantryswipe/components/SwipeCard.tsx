@@ -103,8 +103,7 @@ export default function SwipeCard({
       onMoveShouldSetPanResponder: (_, gs) =>
         isTopRef.current && (Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5),
       onPanResponderGrant: () => {
-        pan.setOffset({ x: (pan.x as any)._value, y: (pan.y as any)._value });
-        pan.setValue({ x: 0, y: 0 });
+        pan.extractOffset();
       },
       onPanResponderMove: Animated.event(
         [null, { dx: pan.x, dy: pan.y }],
