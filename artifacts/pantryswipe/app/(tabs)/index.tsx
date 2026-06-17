@@ -20,7 +20,7 @@ import * as Haptics from "expo-haptics";
 import SwipeCard from "@/components/SwipeCard";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
-import { MOCK_RECIPES, Recipe } from "@/data/mockData";
+import { Recipe } from "@/data/mockData";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH - 16;
@@ -101,7 +101,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { userProfile, getPantryMatchScore, saveRecipe, pantryItems } = useApp();
+  const { userProfile, getPantryMatchScore, saveRecipe, pantryItems, liveRecipes } = useApp();
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const hasBanner = pantryItems.length > 0;
@@ -112,7 +112,16 @@ export default function HomeScreen() {
     SCREEN_HEIGHT - HEADER_TOTAL - SEARCH_H - MOOD_H - (hasBanner ? BANNER_H : 0) - TAB_BAR_H - 12
   );
 
-  const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>(MOCK_RECIPES);
+  const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>(liveRecipes);
+
+  // Reload deck when live recipes arrive from the API (no mood active)
+  useEffect(() => {
+    if (!activeMood) {
+      setFilteredRecipes(liveRecipes);
+      setCurrentIndex(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveRecipes]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeMood, setActiveMood] = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -217,10 +226,10 @@ export default function HomeScreen() {
   const applyMood = useCallback((mood: string) => {
     const moodObj = MOODS.find((m) => m.label === mood);
     if (!moodObj) return;
-    const filtered = MOCK_RECIPES.filter(moodObj.filter);
-    setFilteredRecipes(filtered.length > 0 ? filtered : MOCK_RECIPES);
+    const filtered = liveRecipes.filter(moodObj.filter);
+    setFilteredRecipes(filtered.length > 0 ? filtered : liveRecipes);
     setCurrentIndex(0);
-  }, []);
+  }, [liveRecipes]);
 
   const triggerParticles = useCallback((type: "right" | "left" | "up") => {
     const emojis =
@@ -276,10 +285,10 @@ export default function HomeScreen() {
   }, [filteredRecipes, currentIndex, saveRecipe, triggerParticles, showSaveToast]);
 
   const resetCards = useCallback(() => {
-    setFilteredRecipes(MOCK_RECIPES);
+    setFilteredRecipes(liveRecipes);
     setCurrentIndex(0);
     setActiveMood(null);
-  }, []);
+  }, [liveRecipes]);
 
   const searchResults = SEARCH_VARIANTS.filter((v) =>
     v.label.toLowerCase().includes(searchQuery.toLowerCase()) ||

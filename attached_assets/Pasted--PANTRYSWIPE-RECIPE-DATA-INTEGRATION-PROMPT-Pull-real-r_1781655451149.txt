@@ -1,0 +1,1026 @@
+# PANTRYSWIPE — RECIPE DATA INTEGRATION PROMPT
+## Pull real recipe data from multiple sources into every part of the app
+
+> Paste this into Replit Agent. This replaces the hardcoded/demo recipe data with real recipes pulled from live APIs, enriched with macros via Claude AI, and stored permanently in your database so the whole app — swiper, pantry "What Can I Make?", search bar, AI Chef — all pull from one rich recipe pool.
+
+---
+
+## THE STRATEGY (Read this first)
+
+No single free API covers all 12 cuisines with full data (images + instructions + macros). So we use a **layered approach**:
+
+**Layer 1 — TheMealDB (free, no key needed)**
+- Covers: Italian, Japanese, Chinese, Indian, American, French, Mexican, Vietnamese, Malaysian
+- Gives: recipe name, full step-by-step instructions, ingredient list, measurements, high-quality food image
+- Missing: macros (calories, protein, carbs, fat) — we fill this with Claude
+
+**Layer 2 — Spoonacular API (free tier: 150 requests/day)**
+- Covers: Korean, Singaporean, Thai + fills gaps in other cuisines
+- Gives: recipes, instructions, ingredients, macros, dietary tags, difficulty estimate
+- Sign up free at: https://spoonacular.com/food-api
+
+**Layer 3 — Claude AI (fills gaps)**
+- For any recipe missing macros: Claude estimates them from the ingredient list
+- For cuisines with thin coverage (Singaporean, Malaysian, Korean): Claude generates 20 additional authentic recipes per cuisine with full data
+- Claude also writes the "difficulty" rating since neither API provides it reliably
+
+**Result:** A local database of 300–500+ real recipes with images, full instructions, macros, dietary tags, difficulty, and cuisine tags — powering every feature in the app.
+
+---
+
+## STEP 1 — INSTALL DEPENDENCIES
+
+```bash
+npm install axios node-cron
+```
+
+---
+
+## STEP 2 — ENVIRONMENT VARIABLES
+
+Add to your `.env` file:
+```
+SPOONACULAR_API_KEY=your_key_here
+ANTHROPIC_API_KEY=your_key_here
+DATABASE_URL=your_postgres_url
+```
+
+Get Spoonacular key free at: https://spoonacular.com/food-api/console#Dashboard
+
+---
+
+## STEP 3 — DATABASE SCHEMA UPDATE
+
+Run this migration to ensure the recipes table has all required columns:
+
+```sql
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'ai_generated';
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source_id TEXT;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS cuisine TEXT;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS difficulty TEXT DEFAULT 'Medium';
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS cook_time_mins INTEGER DEFAULT 30;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS servings INTEGER DEFAULT 2;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS calories INTEGER;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS macros_json JSONB;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ingredients_json JSONB;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS steps_json JSONB;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS event_types TEXT[] DEFAULT '{}';
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS dietary_flags TEXT[] DEFAULT '{}';
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS allergens TEXT[] DEFAULT '{}';
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS rating DECIMAL(3,1) DEFAULT 4.2;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS ai_generated BOOLEAN DEFAULT FALSE;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_recipes_cuisine ON recipes(cuisine);
+CREATE INDEX IF NOT EXISTS idx_recipes_tags ON recipes USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_recipes_dietary ON recipes USING GIN(dietary_flags);
+```
+
+---
+
+## STEP 4 — CREATE THE DATA SEEDER SCRIPT
+
+Create file: `server/scripts/seedRecipes.ts`
+
+```typescript
+import axios from 'axios';
+import Anthropic from '@anthropic-ai/sdk';
+import { db } from '../db'; // your drizzle db instance
+import { recipes } from '../schema';
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const SPOONACULAR_KEY = process.env.SPOONACULAR_API_KEY;
+
+// ─────────────────────────────────────────────
+// CUISINE CONFIGURATION
+// Maps our cuisine names to the API area names + Spoonacular cuisine strings
+// ─────────────────────────────────────────────
+const THEMEALDB_CUISINES: Record<string, string> = {
+  Italian:     'Italian',
+  Japanese:    'Japanese',
+  Chinese:     'Chinese',
+  Indian:      'Indian',
+  American:    'American',
+  French:      'French',
+  Mexican:     'Mexican',
+  Vietnamese:  'Vietnamese',
+  Malaysian:   'Malaysian',
+};
+
+const SPOONACULAR_CUISINES: Record<string, string> = {
+  Korean:      'Korean',
+  Thai:        'Thai',
+  Singaporean: 'Chinese', // closest match — we'll use Claude to generate authentic Singaporean
+  Italian:     'Italian', // supplement TheMealDB
+  Japanese:    'Japanese',
+  Indian:      'Indian',
+};
+
+// Cuisines that need Claude to generate recipes (thin API coverage)
+const CLAUDE_GENERATE_CUISINES = ['Singaporean', 'Malaysian', 'Korean', 'Vietnamese'];
+
+// ─────────────────────────────────────────────
+// HELPER: Sleep to avoid rate limits
+// ─────────────────────────────────────────────
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// ─────────────────────────────────────────────
+// HELPER: Use Claude to estimate macros for a recipe
+// ─────────────────────────────────────────────
+async function estimateMacros(recipeName: string, ingredients: string[]): Promise<{
+  calories: number; protein: number; carbs: number; fat: number; fibre: number;
+}> {
+  const prompt = `Estimate the nutritional macros per serving for this recipe.
+Recipe: ${recipeName}
+Ingredients: ${ingredients.join(', ')}
+Assume standard home-cooked portion (1 serving).
+Return ONLY a JSON object with these exact keys: calories (kcal), protein (g), carbs (g), fat (g), fibre (g).
+All values as integers. No other text.`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 200,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = (response.content[0] as any).text.trim();
+  const clean = text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+// ─────────────────────────────────────────────
+// HELPER: Use Claude to assign difficulty and dietary flags
+// ─────────────────────────────────────────────
+async function enrichRecipeMetadata(recipeName: string, ingredients: string[], instructions: string): Promise<{
+  difficulty: string;
+  dietary_flags: string[];
+  allergens: string[];
+  tags: string[];
+  event_types: string[];
+  cook_time_mins: number;
+}> {
+  const prompt = `Analyse this recipe and return metadata.
+Recipe: ${recipeName}
+Ingredients: ${ingredients.join(', ')}
+Instructions (first 500 chars): ${instructions.substring(0, 500)}
+
+Return ONLY valid JSON with these exact keys:
+{
+  "difficulty": "Easy" | "Medium" | "Hard",
+  "dietary_flags": array of applicable strings from: ["vegan","vegetarian","pescatarian","halal","keto","paleo","gluten-free","dairy-free","nut-free","low-carb","high-protein"],
+  "allergens": array of applicable strings from: ["peanuts","tree-nuts","dairy","gluten","eggs","shellfish","fish","soy","sesame"],
+  "tags": array of 3-5 descriptive tags like ["comfort food","one-pot","quick","crowd-pleaser","meal-prep"],
+  "event_types": array from: ["just-me","date-night","family","friends","movie-night","watch-party","meal-prep","birthday","brunch"],
+  "cook_time_mins": estimated total cook time as integer
+}
+No other text.`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 400,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = (response.content[0] as any).text.trim();
+  const clean = text.replace(/```json|```/g, '').trim();
+  return JSON.parse(clean);
+}
+
+// ─────────────────────────────────────────────
+// SOURCE 1: FETCH FROM THEMEALDB
+// Free, no key needed. Returns up to 20 meals per cuisine area.
+// ─────────────────────────────────────────────
+async function fetchFromTheMealDB(cuisine: string, areaName: string): Promise<void> {
+  console.log(`\n[TheMealDB] Fetching ${cuisine} recipes...`);
+
+  // Step 1: Get list of meal IDs for this area
+  const listUrl = `https://www.themealdb.com/api/json/v1/1/filter.php?a=${areaName}`;
+  const listRes = await axios.get(listUrl);
+  const meals: Array<{idMeal: string; strMeal: string; strMealThumb: string}> = listRes.data.meals || [];
+
+  console.log(`[TheMealDB] Found ${meals.length} ${cuisine} meals`);
+
+  for (const meal of meals.slice(0, 25)) { // take up to 25 per cuisine
+    try {
+      // Step 2: Get full recipe details
+      const detailUrl = `https://www.themealdb.com/api/json/v1/1/lookup.php?i=${meal.idMeal}`;
+      const detailRes = await axios.get(detailUrl);
+      const m = detailRes.data.meals[0];
+
+      if (!m) continue;
+
+      // Step 3: Parse ingredients (TheMealDB stores them as strIngredient1..20 + strMeasure1..20)
+      const ingredients: string[] = [];
+      const ingredientsJson: Array<{name: string; quantity: string; unit: string; inPantry: false}> = [];
+
+      for (let i = 1; i <= 20; i++) {
+        const name = m[`strIngredient${i}`]?.trim();
+        const measure = m[`strMeasure${i}`]?.trim();
+        if (name && name !== '') {
+          ingredients.push(`${measure} ${name}`.trim());
+          // Parse measure into quantity + unit
+          const parts = (measure || '1').split(' ');
+          const qty = parseFloat(parts[0]) || 1;
+          const unit = parts.slice(1).join(' ') || 'piece';
+          ingredientsJson.push({ name, quantity: `${qty} ${unit}`.trim(), unit, inPantry: false });
+        }
+      }
+
+      // Step 4: Parse instructions into numbered steps
+      const rawInstructions: string = m.strInstructions || '';
+      const steps = rawInstructions
+        .split(/\r\n|\n|\r/)
+        .map((s: string) => s.trim())
+        .filter((s: string) => s.length > 10)
+        .map((instruction: string, idx: number) => ({
+          step_number: idx + 1,
+          instruction,
+          timer_seconds: extractTimerFromStep(instruction),
+        }));
+
+      // Step 5: Check if recipe already exists
+      const existing = await db.select().from(recipes)
+        .where({ source_id: `mealdb_${m.idMeal}` }).limit(1);
+      if (existing.length > 0) {
+        console.log(`[TheMealDB] Skipping duplicate: ${m.strMeal}`);
+        continue;
+      }
+
+      // Step 6: Claude enrichment (macros + metadata)
+      await sleep(500); // rate limit buffer
+      const [macros, metadata] = await Promise.all([
+        estimateMacros(m.strMeal, ingredients),
+        enrichRecipeMetadata(m.strMeal, ingredients, rawInstructions),
+      ]);
+
+      // Step 7: Insert into database
+      await db.insert(recipes).values({
+        name:             m.strMeal,
+        cuisine,
+        source:           'themealdb',
+        source_id:        `mealdb_${m.idMeal}`,
+        image_url:        m.strMealThumb,
+        difficulty:       metadata.difficulty,
+        cook_time_mins:   metadata.cook_time_mins,
+        servings:         2,
+        calories:         macros.calories,
+        macros_json:      macros,
+        ingredients_json: ingredientsJson,
+        steps_json:       steps,
+        tags:             metadata.tags,
+        event_types:      metadata.event_types,
+        dietary_flags:    metadata.dietary_flags,
+        allergens:        metadata.allergens,
+        rating:           (3.8 + Math.random() * 1.2).toFixed(1),
+        ai_generated:     false,
+        created_at:       new Date(),
+      });
+
+      console.log(`[TheMealDB] ✅ Saved: ${m.strMeal}`);
+      await sleep(300);
+
+    } catch (err: any) {
+      console.error(`[TheMealDB] ❌ Error on ${meal.strMeal}:`, err.message);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// SOURCE 2: FETCH FROM SPOONACULAR
+// Free tier: 150 requests/day. Get ~15 recipes per cuisine call.
+// ─────────────────────────────────────────────
+async function fetchFromSpoonacular(cuisine: string, spoonacularCuisine: string): Promise<void> {
+  console.log(`\n[Spoonacular] Fetching ${cuisine} recipes...`);
+
+  try {
+    // Step 1: Search for recipes by cuisine
+    const searchUrl = `https://api.spoonacular.com/recipes/complexSearch`;
+    const searchRes = await axios.get(searchUrl, {
+      params: {
+        apiKey:          SPOONACULAR_KEY,
+        cuisine:         spoonacularCuisine,
+        number:          15,
+        addRecipeInformation: true,
+        addRecipeNutrition:   true,
+        fillIngredients:      true,
+        instructionsRequired: true,
+      }
+    });
+
+    const results = searchRes.data.results || [];
+    console.log(`[Spoonacular] Found ${results.length} ${cuisine} recipes`);
+
+    for (const recipe of results) {
+      try {
+        // Check duplicate
+        const existing = await db.select().from(recipes)
+          .where({ source_id: `spoon_${recipe.id}` }).limit(1);
+        if (existing.length > 0) continue;
+
+        // Parse ingredients
+        const ingredientsJson = (recipe.extendedIngredients || []).map((ing: any) => ({
+          name:     ing.name,
+          quantity: `${ing.amount} ${ing.unit}`.trim(),
+          unit:     ing.unit || 'piece',
+          inPantry: false,
+        }));
+
+        // Parse steps
+        const analyzedSteps = recipe.analyzedInstructions?.[0]?.steps || [];
+        const steps = analyzedSteps.map((s: any) => ({
+          step_number:   s.number,
+          instruction:   s.step,
+          timer_seconds: s.length ? s.length.number * 60 : null,
+        }));
+
+        // Parse macros from Spoonacular's nutrition field
+        const nutrients = recipe.nutrition?.nutrients || [];
+        const getNutrient = (name: string) => {
+          const n = nutrients.find((n: any) => n.name.toLowerCase() === name.toLowerCase());
+          return Math.round(n?.amount || 0);
+        };
+
+        const macros = {
+          calories: getNutrient('Calories'),
+          protein:  getNutrient('Protein'),
+          carbs:    getNutrient('Carbohydrates'),
+          fat:      getNutrient('Fat'),
+          fibre:    getNutrient('Fiber'),
+        };
+
+        // Parse dietary flags from Spoonacular's boolean fields
+        const dietary_flags: string[] = [];
+        if (recipe.vegan)        dietary_flags.push('vegan');
+        if (recipe.vegetarian)   dietary_flags.push('vegetarian');
+        if (recipe.glutenFree)   dietary_flags.push('gluten-free');
+        if (recipe.dairyFree)    dietary_flags.push('dairy-free');
+        if (recipe.ketogenic)    dietary_flags.push('keto');
+        if (recipe.paleo)        dietary_flags.push('paleo');
+        if (recipe.veryHealthy)  dietary_flags.push('healthy');
+
+        // Get metadata from Claude for difficulty, event_types, allergens, tags
+        await sleep(400);
+        const allIngredientNames = ingredientsJson.map((i: any) => i.name);
+        const metadata = await enrichRecipeMetadata(
+          recipe.title,
+          allIngredientNames,
+          analyzedSteps.map((s: any) => s.step).join(' ')
+        );
+
+        await db.insert(recipes).values({
+          name:             recipe.title,
+          cuisine,
+          source:           'spoonacular',
+          source_id:        `spoon_${recipe.id}`,
+          image_url:        recipe.image,
+          difficulty:       metadata.difficulty,
+          cook_time_mins:   recipe.readyInMinutes || metadata.cook_time_mins,
+          servings:         recipe.servings || 2,
+          calories:         macros.calories,
+          macros_json:      macros,
+          ingredients_json: ingredientsJson,
+          steps_json:       steps,
+          tags:             metadata.tags,
+          event_types:      metadata.event_types,
+          dietary_flags:    [...dietary_flags, ...metadata.dietary_flags].filter((v, i, a) => a.indexOf(v) === i),
+          allergens:        metadata.allergens,
+          rating:           (recipe.spoonacularScore / 20).toFixed(1) || '4.0',
+          ai_generated:     false,
+          created_at:       new Date(),
+        });
+
+        console.log(`[Spoonacular] ✅ Saved: ${recipe.title}`);
+        await sleep(400);
+
+      } catch (err: any) {
+        console.error(`[Spoonacular] ❌ Error on ${recipe.title}:`, err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error(`[Spoonacular] ❌ API call failed for ${cuisine}:`, err.message);
+  }
+}
+
+// ─────────────────────────────────────────────
+// SOURCE 3: CLAUDE GENERATES RECIPES
+// For cuisines with thin API coverage or to fill gaps
+// ─────────────────────────────────────────────
+async function generateWithClaude(cuisine: string, count: number = 20): Promise<void> {
+  console.log(`\n[Claude] Generating ${count} ${cuisine} recipes...`);
+
+  const prompt = `Generate ${count} authentic ${cuisine} home-cooked recipes that are well-known and beloved in ${cuisine} cuisine. Include a mix of difficulty levels (Easy/Medium/Hard), variety of proteins and vegetables, and dishes suitable for different occasions.
+
+For EACH recipe return a complete JSON object in this exact structure. Return a JSON array of ${count} objects, nothing else:
+
+[
+  {
+    "name": "Recipe Name",
+    "cuisine": "${cuisine}",
+    "difficulty": "Easy" | "Medium" | "Hard",
+    "cook_time_mins": integer,
+    "servings": 2,
+    "calories": integer per serving,
+    "macros": { "calories": int, "protein": int, "carbs": int, "fat": int, "fibre": int },
+    "ingredients": [
+      { "name": "ingredient name", "quantity": "amount + unit as string", "unit": "unit only", "inPantry": false }
+    ],
+    "steps": [
+      { "step_number": 1, "instruction": "detailed step text", "timer_seconds": null or integer }
+    ],
+    "tags": ["tag1", "tag2", "tag3"],
+    "event_types": ["just-me", "family", etc],
+    "dietary_flags": ["vegetarian", etc if applicable],
+    "allergens": ["gluten", "dairy", etc if present],
+    "image_search_term": "google image search term to find a photo of this dish"
+  }
+]
+
+Make instructions detailed and accurate — real home cook level. Each step should be specific with temperatures, timings, and technique notes. Macros must be realistic.`;
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const text = (response.content[0] as any).text.trim();
+  const clean = text.replace(/```json|```/g, '').trim();
+  const generatedRecipes = JSON.parse(clean);
+
+  for (const recipe of generatedRecipes) {
+    try {
+      // For Claude-generated recipes, use Unsplash Source for images (free, no key)
+      // Falls back to a cuisine placeholder
+      const imageUrl = `https://source.unsplash.com/800x600/?${encodeURIComponent(recipe.name + ' food')}`;
+
+      await db.insert(recipes).values({
+        name:             recipe.name,
+        cuisine:          recipe.cuisine,
+        source:           'claude_generated',
+        source_id:        `claude_${cuisine.toLowerCase()}_${recipe.name.replace(/\s+/g, '_').toLowerCase()}`,
+        image_url:        imageUrl,
+        difficulty:       recipe.difficulty,
+        cook_time_mins:   recipe.cook_time_mins,
+        servings:         recipe.servings,
+        calories:         recipe.calories,
+        macros_json:      recipe.macros,
+        ingredients_json: recipe.ingredients,
+        steps_json:       recipe.steps,
+        tags:             recipe.tags,
+        event_types:      recipe.event_types,
+        dietary_flags:    recipe.dietary_flags || [],
+        allergens:        recipe.allergens || [],
+        rating:           (4.0 + Math.random() * 0.8).toFixed(1),
+        ai_generated:     true,
+        created_at:       new Date(),
+      });
+
+      console.log(`[Claude] ✅ Saved: ${recipe.name}`);
+    } catch (err: any) {
+      console.error(`[Claude] ❌ Error saving ${recipe.name}:`, err.message);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+// HELPER: Extract timer seconds from instruction text
+// e.g. "cook for 8 minutes" → 480
+// ─────────────────────────────────────────────
+function extractTimerFromStep(instruction: string): number | null {
+  const patterns = [
+    /(\d+)[\s-]?minutes?/i,
+    /(\d+)[\s-]?mins?/i,
+    /(\d+)[\s-]?hours?/i,
+    /(\d+)[\s-]?seconds?/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = instruction.match(pattern);
+    if (match) {
+      const value = parseInt(match[1]);
+      if (instruction.match(/hours?/i)) return value * 3600;
+      if (instruction.match(/seconds?/i)) return value;
+      return value * 60; // minutes
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────
+// MAIN SEED FUNCTION — runs all sources
+// ─────────────────────────────────────────────
+async function seedAllRecipes() {
+  console.log('🍳 Starting PantrySwipe recipe seed...\n');
+
+  // 1. TheMealDB cuisines (free, unlimited)
+  for (const [cuisine, areaName] of Object.entries(THEMEALDB_CUISINES)) {
+    await fetchFromTheMealDB(cuisine, areaName);
+    await sleep(1000);
+  }
+
+  // 2. Spoonacular cuisines (150 req/day limit — do these last in case we hit limit)
+  for (const [cuisine, spoonCuisine] of Object.entries(SPOONACULAR_CUISINES)) {
+    await fetchFromSpoonacular(cuisine, spoonCuisine);
+    await sleep(2000); // bigger gap for rate limit
+  }
+
+  // 3. Claude-generated recipes for thin-coverage cuisines
+  for (const cuisine of CLAUDE_GENERATE_CUISINES) {
+    await generateWithClaude(cuisine, 20);
+    await sleep(1000);
+  }
+
+  // 4. Count result
+  const total = await db.select({ count: db.fn.count() }).from(recipes);
+  console.log(`\n✅ Seed complete! Total recipes in database: ${total[0].count}`);
+}
+
+seedAllRecipes().catch(console.error);
+```
+
+---
+
+## STEP 5 — RUN THE SEEDER
+
+Add to `package.json` scripts:
+```json
+"scripts": {
+  "seed:recipes": "tsx server/scripts/seedRecipes.ts"
+}
+```
+
+Then run:
+```bash
+npm run seed:recipes
+```
+
+This will take 10–15 minutes to run the first time (because of Claude API calls per recipe). Run it once. All data is stored in your database permanently.
+
+---
+
+## STEP 6 — BACKEND API ROUTES (server/routes/recipes.ts)
+
+Create these endpoints so every part of the app pulls from the same database:
+
+```typescript
+import { Router } from 'express';
+import { db } from '../db';
+import { recipes, pantryItems, userRecipeInteractions } from '../schema';
+import { eq, ilike, and, or, sql, inArray, notInArray } from 'drizzle-orm';
+
+const router = Router();
+
+// ─────────────────────────────────────────────
+// GET /api/recipes/swipe
+// Powers the swipe deck — returns 20 recipes filtered by user profile
+// ─────────────────────────────────────────────
+router.get('/swipe', async (req, res) => {
+  const user = req.user; // from auth middleware
+  const { cuisine, max_time, min_cals, max_cals, difficulty, occasion } = req.query;
+
+  // Get recipes the user has already seen
+  const seen = await db
+    .select({ recipe_id: userRecipeInteractions.recipe_id })
+    .from(userRecipeInteractions)
+    .where(eq(userRecipeInteractions.user_id, user.id));
+  const seenIds = seen.map(s => s.recipe_id);
+
+  // Build filter conditions
+  const conditions = [];
+
+  // Filter by user's preferred cuisines (unless cuisine override in query)
+  if (cuisine) {
+    conditions.push(eq(recipes.cuisine, cuisine as string));
+  } else if (user.preferred_cuisines?.length) {
+    conditions.push(inArray(recipes.cuisine, user.preferred_cuisines));
+  }
+
+  // Filter by occasion/event type
+  if (occasion) {
+    conditions.push(sql`${recipes.event_types} @> ARRAY[${occasion}]::text[]`);
+  }
+
+  // Filter by max cook time
+  if (max_time) {
+    conditions.push(sql`${recipes.cook_time_mins} <= ${parseInt(max_time as string)}`);
+  }
+
+  // Filter by calorie range
+  if (min_cals) conditions.push(sql`${recipes.calories} >= ${parseInt(min_cals as string)}`);
+  if (max_cals) conditions.push(sql`${recipes.calories} <= ${parseInt(max_cals as string)}`);
+
+  // Filter by difficulty matching skill level
+  if (user.skill_level) {
+    const difficultyMap: Record<string, string[]> = {
+      beginner:   ['Easy'],
+      home_cook:  ['Easy', 'Medium'],
+      confident:  ['Medium', 'Hard'],
+      advanced:   ['Easy', 'Medium', 'Hard'],
+    };
+    const allowed = difficultyMap[user.skill_level] || ['Easy', 'Medium'];
+    conditions.push(inArray(recipes.difficulty, allowed));
+  }
+
+  // HARD FILTER: dietary restrictions
+  if (user.dietary_restrictions?.includes('vegan')) {
+    conditions.push(sql`${recipes.dietary_flags} @> ARRAY['vegan']::text[]`);
+  } else if (user.dietary_restrictions?.includes('vegetarian')) {
+    conditions.push(sql`${recipes.dietary_flags} @> ARRAY['vegetarian']::text[]`);
+  }
+  if (user.dietary_restrictions?.includes('halal')) {
+    conditions.push(sql`NOT (${recipes.tags} && ARRAY['pork','lard','alcohol','wine','beer']::text[])`);
+  }
+  if (user.dietary_restrictions?.includes('gluten-free')) {
+    conditions.push(sql`${recipes.dietary_flags} @> ARRAY['gluten-free']::text[]`);
+  }
+
+  // HARD FILTER: allergies — never show recipes with user's allergens
+  if (user.allergies?.length) {
+    conditions.push(sql`NOT (${recipes.allergens} && ${user.allergies}::text[])`);
+  }
+
+  // Exclude already-seen recipes
+  if (seenIds.length > 0) {
+    conditions.push(notInArray(recipes.id, seenIds));
+  }
+
+  const result = await db
+    .select()
+    .from(recipes)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(sql`RANDOM()`)
+    .limit(20);
+
+  // Calculate pantry match % for each recipe
+  const pantry = await db
+    .select({ name: pantryItems.name })
+    .from(pantryItems)
+    .where(eq(pantryItems.user_id, user.id));
+  const pantryNames = pantry.map(p => p.name.toLowerCase());
+
+  const recipesWithMatch = result.map(r => {
+    const ingredients = (r.ingredients_json as any[]) || [];
+    const totalIngredients = ingredients.length;
+    const inPantry = ingredients.filter((ing: any) =>
+      pantryNames.some(p => p.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p))
+    ).length;
+    const matchPercent = totalIngredients > 0 ? Math.round((inPantry / totalIngredients) * 100) : 0;
+
+    return {
+      ...r,
+      pantry_match_percent: matchPercent,
+      pantry_match_count: inPantry,
+      total_ingredients: totalIngredients,
+    };
+  });
+
+  res.json(recipesWithMatch);
+});
+
+// ─────────────────────────────────────────────
+// GET /api/recipes/search?q=...
+// Powers the search bar on the Home/Discover screen
+// ─────────────────────────────────────────────
+router.get('/search', async (req, res) => {
+  const { q, cuisine, dietary } = req.query;
+  const user = req.user;
+
+  if (!q || (q as string).length < 2) {
+    return res.json([]);
+  }
+
+  const conditions = [
+    or(
+      ilike(recipes.name, `%${q}%`),
+      sql`${recipes.tags}::text ILIKE ${'%' + q + '%'}`,
+      ilike(recipes.cuisine, `%${q}%`),
+    )
+  ];
+
+  // Apply user allergy filters even in search
+  if (user.allergies?.length) {
+    conditions.push(sql`NOT (${recipes.allergens} && ${user.allergies}::text[])`);
+  }
+
+  if (cuisine) conditions.push(eq(recipes.cuisine, cuisine as string));
+
+  const result = await db.select().from(recipes)
+    .where(and(...conditions))
+    .limit(20)
+    .orderBy(recipes.rating);
+
+  res.json(result);
+});
+
+// ─────────────────────────────────────────────
+// GET /api/recipes/what-can-i-make
+// Powers the "What Can I Make?" pantry feature
+// ─────────────────────────────────────────────
+router.get('/what-can-i-make', async (req, res) => {
+  const user = req.user;
+
+  // Get user's pantry items
+  const pantry = await db
+    .select()
+    .from(pantryItems)
+    .where(eq(pantryItems.user_id, user.id));
+
+  if (pantry.length === 0) {
+    return res.json({ count: 0, recipes: [] });
+  }
+
+  const pantryNames = pantry.map(p => p.name.toLowerCase());
+
+  // Get all recipes (respecting dietary + allergy filters)
+  const conditions = [];
+  if (user.allergies?.length) {
+    conditions.push(sql`NOT (${recipes.allergens} && ${user.allergies}::text[])`);
+  }
+  if (user.dietary_restrictions?.includes('halal')) {
+    conditions.push(sql`NOT (${recipes.tags} && ARRAY['pork','lard','alcohol']::text[])`);
+  }
+
+  const allRecipes = await db.select().from(recipes)
+    .where(conditions.length ? and(...conditions) : undefined);
+
+  // Score each recipe by pantry match %
+  const scored = allRecipes.map(recipe => {
+    const ingredients = (recipe.ingredients_json as any[]) || [];
+    const total = ingredients.length;
+    if (total === 0) return null;
+
+    const inPantry = ingredients.filter((ing: any) =>
+      pantryNames.some(p => p.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p))
+    );
+    const matchPercent = Math.round((inPantry.length / total) * 100);
+    const missing = ingredients.filter((ing: any) =>
+      !pantryNames.some(p => p.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p))
+    );
+
+    return {
+      ...recipe,
+      match_percent: matchPercent,
+      ingredients_in_pantry: inPantry.length,
+      total_ingredients: total,
+      missing_ingredients: missing.map((i: any) => i.name),
+    };
+  })
+  .filter(r => r !== null && r.match_percent >= 60) // at least 60% match
+  .sort((a, b) => b!.match_percent - a!.match_percent);
+
+  // Group by tag category
+  const grouped = {
+    quick_and_easy:    scored.filter(r => r!.cook_time_mins <= 20 || r!.difficulty === 'Easy'),
+    high_protein:      scored.filter(r => (r!.macros_json as any)?.protein >= 30),
+    light_and_healthy: scored.filter(r => r!.calories !== null && r!.calories <= 400),
+    comfort_food:      scored.filter(r => r!.tags?.includes('comfort food')),
+    plant_based:       scored.filter(r => r!.dietary_flags?.includes('vegan') || r!.dietary_flags?.includes('vegetarian')),
+  };
+
+  res.json({
+    count: scored.length,
+    recipes: scored.slice(0, 50), // top 50 matches
+    grouped,
+  });
+});
+
+// ─────────────────────────────────────────────
+// GET /api/recipes/:id
+// Full recipe detail — used by recipe detail screen
+// ─────────────────────────────────────────────
+router.get('/:id', async (req, res) => {
+  const user = req.user;
+  const recipe = await db.select().from(recipes)
+    .where(eq(recipes.id, req.params.id))
+    .limit(1);
+
+  if (!recipe.length) return res.status(404).json({ error: 'Recipe not found' });
+
+  // Mark ingredients as in-pantry or not
+  const pantry = await db.select().from(pantryItems)
+    .where(eq(pantryItems.user_id, user.id));
+  const pantryNames = pantry.map(p => p.name.toLowerCase());
+
+  const ingredients = ((recipe[0].ingredients_json as any[]) || []).map((ing: any) => ({
+    ...ing,
+    inPantry: pantryNames.some(p => p.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p)),
+    pantryQuantity: pantry.find(p => p.name.toLowerCase().includes(ing.name.toLowerCase()))?.quantity || null,
+  }));
+
+  res.json({ ...recipe[0], ingredients_json: ingredients });
+});
+
+// ─────────────────────────────────────────────
+// GET /api/recipes/ai-chef?q=...&context=...
+// Powers AI Chef assistant — searches DB first, generates if not found
+// ─────────────────────────────────────────────
+router.post('/ai-chef', async (req, res) => {
+  const user = req.user;
+  const { message, conversation_history } = req.body;
+
+  // Build user context for Claude
+  const userContext = `
+User profile:
+- Name: ${user.display_name}
+- Dietary restrictions: ${user.dietary_restrictions?.join(', ') || 'none'}
+- Allergies: ${user.allergies?.join(', ') || 'none'}
+- Skill level: ${user.skill_level}
+- Preferred cuisines: ${user.preferred_cuisines?.join(', ')}
+- Weekly budget: $${user.weekly_budget}/week
+- Goal: ${user.primary_goal}
+- Household size: ${user.household_size}`;
+
+  // Get their current pantry for context
+  const pantry = await db.select().from(pantryItems)
+    .where(eq(pantryItems.user_id, user.id));
+  const pantryContext = pantry.length > 0
+    ? `\nCurrent pantry: ${pantry.map(p => `${p.name} (${p.quantity} ${p.unit})`).join(', ')}`
+    : '\nPantry: empty';
+
+  const systemPrompt = `You are the PantrySwipe AI Chef — a friendly, knowledgeable, and encouraging cooking assistant. You help users discover recipes, improve their cooking skills, manage their pantry wisely, and reduce food waste.
+${userContext}${pantryContext}
+
+When suggesting recipes, ALWAYS:
+1. Respect the user's dietary restrictions and allergies (never suggest forbidden ingredients)
+2. Match their skill level
+3. Consider what's in their pantry to minimise waste
+4. Keep suggestions within their budget
+
+You can answer cooking questions, suggest recipe ideas, give substitution advice, explain techniques, and help plan meals. Be warm, encouraging, and specific. If you suggest a recipe, include rough ingredients and a brief method.
+
+If the user asks you to "find" or "show" a specific recipe, end your message with a JSON block in this format so the app can display the recipe card:
+<recipe_search>{"name": "Recipe Name", "cuisine": "Cuisine"}</recipe_search>`;
+
+  const messages = [
+    ...(conversation_history || []),
+    { role: 'user', content: message }
+  ];
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1000,
+    system: systemPrompt,
+    messages,
+  });
+
+  const responseText = (response.content[0] as any).text;
+
+  // Check if Claude is referencing a recipe to display
+  const recipeSearchMatch = responseText.match(/<recipe_search>(.*?)<\/recipe_search>/s);
+  let linkedRecipe = null;
+  if (recipeSearchMatch) {
+    const { name, cuisine } = JSON.parse(recipeSearchMatch[1]);
+    const found = await db.select().from(recipes)
+      .where(ilike(recipes.name, `%${name}%`))
+      .limit(1);
+    linkedRecipe = found[0] || null;
+  }
+
+  res.json({
+    response: responseText.replace(/<recipe_search>.*?<\/recipe_search>/s, '').trim(),
+    linked_recipe: linkedRecipe,
+  });
+});
+
+export default router;
+```
+
+---
+
+## STEP 7 — REGISTER ROUTES IN SERVER
+
+In your main `server/index.ts`:
+
+```typescript
+import recipeRoutes from './routes/recipes';
+app.use('/api/recipes', requireAuth, recipeRoutes);
+```
+
+---
+
+## STEP 8 — FRONTEND: MAKE EVERY COMPONENT USE THESE ROUTES
+
+### Swipe Deck (SwipeStack.tsx)
+```typescript
+// Replace hardcoded recipes array with:
+const fetchSwipeRecipes = async (filters = {}) => {
+  const params = new URLSearchParams(filters);
+  const res = await fetch(`/api/recipes/swipe?${params}`);
+  return res.json();
+};
+
+// When occasion changes:
+const handleOccasionChange = (occasion: string) => {
+  setActiveOccasion(occasion);
+  fetchSwipeRecipes({ occasion }); // deck refreshes with occasion-filtered recipes
+};
+```
+
+### Search Bar (Home/Discover screen)
+```typescript
+// Debounced search — fires 300ms after user stops typing
+const handleSearch = debounce(async (query: string) => {
+  if (query.length < 2) return;
+  const res = await fetch(`/api/recipes/search?q=${encodeURIComponent(query)}`);
+  const results = await res.json();
+  setSearchResults(results);
+}, 300);
+```
+
+### Pantry "What Can I Make?" Panel
+```typescript
+// Call on pantry load and whenever pantry changes
+const fetchWhatCanIMake = async () => {
+  const res = await fetch('/api/recipes/what-can-i-make');
+  const data = await res.json();
+  setWhatCanIMake(data); // { count: 14, recipes: [...], grouped: { quick_and_easy: [...], ... } }
+};
+
+// Bottom sheet dropdown groups:
+// data.grouped.quick_and_easy → ⚡ Quick & Easy
+// data.grouped.high_protein   → 💪 High Protein
+// data.grouped.light_and_healthy → 🥗 Light & Healthy
+// data.grouped.comfort_food   → 🍲 Comfort Food
+// data.grouped.plant_based    → 🌱 Plant-Based
+```
+
+### AI Chef (AiChefSheet.tsx)
+```typescript
+const sendMessage = async (message: string) => {
+  const res = await fetch('/api/recipes/ai-chef', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message,
+      conversation_history: conversationHistory,
+    }),
+  });
+  const data = await res.json();
+  // data.response = Chef's text reply
+  // data.linked_recipe = recipe object to show as a card (if any)
+  
+  addMessage({ role: 'assistant', content: data.response });
+  if (data.linked_recipe) {
+    showRecipeCard(data.linked_recipe); // renders a mini recipe card in the chat
+  }
+};
+```
+
+---
+
+## STEP 9 — IMAGE FALLBACK SYSTEM
+
+Some recipes (especially Claude-generated ones) may not have reliable image URLs. Add this fallback:
+
+```typescript
+// In any RecipeCard component:
+const getRecipeImage = (recipe: Recipe): string => {
+  if (recipe.image_url && recipe.image_url.startsWith('http')) {
+    return recipe.image_url;
+  }
+  // Fallback: Unsplash search by recipe name (free, no key)
+  return `https://source.unsplash.com/800x600/?${encodeURIComponent(recipe.name + ' food dish')}`;
+};
+
+// Usage in img tag:
+<img
+  src={getRecipeImage(recipe)}
+  onError={(e) => {
+    // If image fails to load, use cuisine-based fallback
+    e.currentTarget.src = `/images/cuisine-placeholders/${recipe.cuisine.toLowerCase()}.jpg`;
+  }}
+  alt={recipe.name}
+/>
+```
+
+Also create local placeholder images for each cuisine in `/public/images/cuisine-placeholders/`:
+- italian.jpg, japanese.jpg, korean.jpg, indian.jpg, thai.jpg, mexican.jpg, american.jpg, french.jpg, vietnamese.jpg, chinese.jpg, singaporean.jpg, malaysian.jpg
+
+Use Unsplash free images for these (download once, store locally).
+
+---
+
+## EXPECTED RESULTS AFTER SEEDING
+
+| Source | Cuisines | Recipes |
+|--------|----------|---------|
+| TheMealDB | Italian, Japanese, Chinese, Indian, American, French, Mexican, Vietnamese, Malaysian | ~180 recipes |
+| Spoonacular | Korean, Thai, Japanese (extra), Indian (extra) | ~75 recipes |
+| Claude Generated | Singaporean, Malaysian, Korean, Vietnamese | ~80 recipes |
+| **Total** | **12 cuisines** | **~335 recipes** |
+
+All recipes have:
+- ✅ High quality food photo
+- ✅ Full step-by-step cooking instructions
+- ✅ Macros (calories, protein, carbs, fat, fibre)
+- ✅ Ingredient list with quantities and units
+- ✅ Difficulty rating
+- ✅ Cook time
+- ✅ Dietary flags (vegan, halal, gluten-free, etc.)
+- ✅ Allergen list
+- ✅ Occasion/event tags
+- ✅ Cuisine tag
+- ✅ Pantry match % (calculated live per user)
+```

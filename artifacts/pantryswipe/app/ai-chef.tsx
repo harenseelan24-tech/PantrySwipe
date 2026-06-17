@@ -15,7 +15,6 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
-import { AI_RESPONSES } from "@/data/mockData";
 
 interface Message {
   id: string;
@@ -44,6 +43,11 @@ export default function AIChefScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { userProfile, pantryItems } = useApp();
+  const conversationRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
+
+  const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
+    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
+    : "/api";
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -52,32 +56,8 @@ export default function AIChefScreen() {
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const getAIResponse = (userMsg: string): string => {
-    const lower = userMsg.toLowerCase();
-    if (lower.includes("quick") || lower.includes("10 minutes") || lower.includes("fast")) {
-      return AI_RESPONSES.quick;
-    }
-    if (lower.includes("protein") || lower.includes("muscle") || lower.includes("healthy")) {
-      return AI_RESPONSES.healthy;
-    }
-    if (lower.includes("impress") || lower.includes("date") || lower.includes("creative")) {
-      return AI_RESPONSES.creative;
-    }
-    if (lower.includes("calorie") || lower.includes("diet") || lower.includes("weight")) {
-      return AI_RESPONSES.lowCalorie;
-    }
-    if (lower.includes("expir")) {
-      const expiring = pantryItems.filter((i) => i.status === "Expiring" || i.status === "Use Soon");
-      if (expiring.length > 0) {
-        return `You have ${expiring.length} items that need using soon: ${expiring.slice(0, 3).map((i) => i.name).join(", ")}. I'd make a stir-fry or frittata — both are great for using up odds and ends quickly. Want the full recipe?`;
-      }
-      return "Good news! Nothing urgent expiring right now. Your pantry looks fresh.";
-    }
-    return AI_RESPONSES.default;
-  };
-
-  const sendMessage = (text: string = input.trim()) => {
-    if (!text) return;
+  const sendMessage = async (text: string = input.trim()) => {
+    if (!text || isTyping) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const userMsg: Message = {
@@ -91,16 +71,58 @@ export default function AIChefScreen() {
     setInput("");
     setIsTyping(true);
 
-    setTimeout(() => {
+    // Keep last 10 messages as conversation history for context
+    const history = conversationRef.current.slice(-10);
+
+    try {
+      const res = await fetch(`${API_BASE}/recipes/ai-chef`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          conversation_history: history,
+          pantry_items: pantryItems.map((i) => i.name),
+          user_profile: {
+            dietType: userProfile.dietType,
+            allergies: userProfile.allergies,
+            skillLevel: userProfile.skillLevel,
+            cuisinePreferences: userProfile.cuisinePreferences,
+            goal: userProfile.goal,
+            name: userProfile.name,
+          },
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+
+      const data = await res.json().catch(() => ({ response: null }));
+      const aiText = data.response as string | null;
+
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: getAIResponse(text),
+        content: aiText ?? "I'm having a moment — please try again!",
         timestamp: new Date(),
       };
+
       setMessages((prev) => [aiMsg, ...prev]);
+
+      // Update conversation history ref
+      conversationRef.current = [
+        ...history,
+        { role: "user", content: text },
+        { role: "assistant", content: aiMsg.content },
+      ];
+    } catch {
+      const errMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "Looks like I lost my connection. Check your network and try again!",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [errMsg, ...prev]);
+    } finally {
       setIsTyping(false);
-    }, 1200 + Math.random() * 800);
+    }
   };
 
   const formatTime = (date: Date) => {

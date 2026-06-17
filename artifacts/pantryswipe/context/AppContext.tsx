@@ -1,7 +1,80 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { INITIAL_PANTRY, MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
 
+const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
+  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
+  : "/api";
+
+// ─── API recipe shape returned by the server ──────────────────────────────────
+interface ApiRecipe {
+  id: number;
+  name: string;
+  cuisine: string | null;
+  difficulty: string | null;
+  cook_time_mins: number | null;
+  servings: number | null;
+  calories: number | null;
+  rating: string | null;
+  macros_json: { protein: number; carbs: number; fat: number; fibre: number } | null;
+  ingredients_json: Array<{ name: string; quantity: string; unit: string }> | null;
+  steps_json: Array<{ step_number: number; instruction: string; timer_seconds: number | null }> | null;
+  tags: string[] | null;
+  event_types: string[] | null;
+  dietary_flags: string[] | null;
+  allergens: string[] | null;
+  image_url: string | null;
+  source: string | null;
+  pantry_match_percent?: number;
+}
+
+/** Map an API recipe response to the app's frontend Recipe type */
+function mapApiRecipe(r: ApiRecipe): Recipe {
+  const totalTime = r.cook_time_mins ?? 30;
+  const prepTime = Math.round(totalTime * 0.3);
+  const cookTime = totalTime - prepTime;
+  const macros = r.macros_json ?? { protein: 0, carbs: 0, fat: 0, fibre: 0 };
+
+  return {
+    id: `api_${r.id}`,
+    title: r.name,
+    description: r.tags?.slice(0, 3).join(" · ") || `${r.cuisine ?? "World"} cuisine`,
+    cuisine: r.cuisine ?? "International",
+    difficulty: (["Easy", "Medium", "Hard"].includes(r.difficulty ?? "")
+      ? r.difficulty
+      : "Medium") as "Easy" | "Medium" | "Hard",
+    prepTime,
+    cookTime,
+    servings: r.servings ?? 2,
+    calories: r.calories ?? 0,
+    rating: Math.round(parseFloat(r.rating ?? "4.0") * 10) / 10,
+    reviewCount: Math.max(50, Math.round(parseFloat(r.rating ?? "4.0") * 120 + Math.random() * 200)),
+    ingredients: (r.ingredients_json ?? []).map((ing) => ({
+      name: ing.name,
+      amount: ing.quantity || "1",
+      inPantry: false,
+    })),
+    steps: (r.steps_json ?? []).map((s) => ({
+      step: s.step_number,
+      instruction: s.instruction,
+      timerMinutes: s.timer_seconds ? Math.round(s.timer_seconds / 60) : undefined,
+    })),
+    nutrition: {
+      protein: macros.protein ?? 0,
+      carbs: macros.carbs ?? 0,
+      fat: macros.fat ?? 0,
+      fiber: (macros as any).fibre ?? 0,
+    },
+    tags: r.tags ?? [],
+    image: r.image_url ?? null,
+    creator: r.source === "themealdb" ? "TheMealDB" : "AI Chef",
+    creatorAvatar: "",
+    dietTags: r.dietary_flags ?? [],
+    eventTypes: r.event_types ?? [],
+  };
+}
+
+// ─── Context types ────────────────────────────────────────────────────────────
 interface UserProfile {
   name: string;
   email: string;
@@ -33,6 +106,8 @@ interface AppContextType {
   cookedRecipes: string[];
   stats: CookingStats;
   isSetupComplete: boolean;
+  liveRecipes: Recipe[];
+  recipesLoading: boolean;
   updateProfile: (profile: Partial<UserProfile>) => void;
   completeSetup: () => void;
   addToPantry: (item: PantryItem) => void;
@@ -43,6 +118,7 @@ interface AppContextType {
   markCooked: (id: string) => void;
   getMatchingRecipes: () => Recipe[];
   getPantryMatchScore: (recipe: Recipe) => number;
+  refreshRecipes: () => void;
 }
 
 const defaultProfile: UserProfile = {
@@ -79,6 +155,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<CookingStats>(defaultStats);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
 
+  // Live recipes from API — falls back to MOCK_RECIPES when not yet loaded
+  const [liveRecipes, setLiveRecipes] = useState<Recipe[]>(MOCK_RECIPES);
+  const [recipesLoading, setRecipesLoading] = useState(false);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -100,15 +180,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (cookedData) setCookedRecipes(JSON.parse(cookedData));
       if (statsData) setStats(JSON.parse(statsData));
       if (setupData) setIsSetupComplete(JSON.parse(setupData));
-    } catch (e) {
+    } catch {
       // Use defaults on error
     }
+
+    // Fetch live recipes from the API after loading user prefs
+    fetchLiveRecipes();
   };
+
+  const fetchLiveRecipes = useCallback(async (profile?: UserProfile) => {
+    if (recipesLoading) return;
+    setRecipesLoading(true);
+    try {
+      const prefs = profile ?? userProfile;
+      const params = new URLSearchParams();
+      if (prefs.cuisinePreferences?.length) {
+        params.set("cuisines", prefs.cuisinePreferences.join(","));
+      }
+      if (prefs.allergies?.length) {
+        params.set("allergies", prefs.allergies.join(","));
+      }
+      params.set("limit", "60");
+
+      const res = await fetch(`${API_BASE}/recipes/swipe?${params.toString()}`, {
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) return;
+      const data: ApiRecipe[] = await res.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        setLiveRecipes(data.map(mapApiRecipe));
+      }
+      // If API returns empty (not yet seeded), MOCK_RECIPES remain as fallback
+    } catch {
+      // Network error — keep current recipes (mock or previously loaded)
+    } finally {
+      setRecipesLoading(false);
+    }
+  }, [userProfile, recipesLoading]);
 
   const saveData = async (key: string, value: unknown) => {
     try {
       await AsyncStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
+    } catch {
       // ignore
     }
   };
@@ -125,6 +240,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const updated = { ...userProfile, setupComplete: true };
     setUserProfile(updated);
     saveData("pantryswipe_profile", updated);
+    // Refresh recipes with the newly saved profile preferences
+    fetchLiveRecipes(updated);
   };
 
   const addToPantry = (item: PantryItem) => {
@@ -178,6 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getPantryMatchScore = (recipe: Recipe): number => {
     const pantryNames = pantryItems.map((p) => p.name.toLowerCase());
+    if (recipe.ingredients.length === 0) return 0;
     const matching = recipe.ingredients.filter((ing) =>
       pantryNames.some((p) => p.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(p))
     );
@@ -185,8 +303,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getMatchingRecipes = (): Recipe[] => {
-    return MOCK_RECIPES.sort((a, b) => getPantryMatchScore(b) - getPantryMatchScore(a));
+    return [...liveRecipes].sort((a, b) => getPantryMatchScore(b) - getPantryMatchScore(a));
   };
+
+  const refreshRecipes = useCallback(() => {
+    fetchLiveRecipes();
+  }, [fetchLiveRecipes]);
 
   return (
     <AppContext.Provider
@@ -197,6 +319,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         cookedRecipes,
         stats,
         isSetupComplete,
+        liveRecipes,
+        recipesLoading,
         updateProfile,
         completeSetup,
         addToPantry,
@@ -207,6 +331,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         markCooked,
         getMatchingRecipes,
         getPantryMatchScore,
+        refreshRecipes,
       }}
     >
       {children}

@@ -21,7 +21,7 @@ import * as Haptics from "expo-haptics";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
-import { MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
+import { PantryItem, Recipe } from "@/data/mockData";
 import { lookupBarcode, type BarcodeProduct } from "@/services/barcodeService";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -93,7 +93,7 @@ export default function PantryScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { pantryItems, addToPantry, removeFromPantry, getPantryMatchScore } = useApp();
+  const { pantryItems, addToPantry, removeFromPantry, getPantryMatchScore, liveRecipes } = useApp();
 
   const isDark = colors.background === "#07101E";
 
@@ -155,10 +155,16 @@ export default function PantryScreen() {
   });
 
   const expiringItems = pantryItems.filter((i) => i.status === "Expiring" || i.status === "Expired");
-  const completeRecipes = MOCK_RECIPES.filter((r) => r.ingredients.every((i) => i.inPantry)).length;
-  const oneIngredientAway = MOCK_RECIPES.filter((r) => r.ingredients.filter((i) => !i.inPantry).length === 1).length;
+  const completeRecipes = liveRecipes.filter((r) => getPantryMatchScore(r) >= 80).length;
+  const oneIngredientAway = liveRecipes.filter((r) => {
+    const names = pantryItems.map((p) => p.name.toLowerCase());
+    const missing = r.ingredients.filter(
+      (ing) => !names.some((n) => n.includes(ing.name.toLowerCase()) || ing.name.toLowerCase().includes(n))
+    );
+    return missing.length === 1;
+  }).length;
   const pantryValue = pantryItems.reduce((acc, item) => acc + item.quantity * 0.5, 0).toFixed(0);
-  const matchableRecipes = MOCK_RECIPES
+  const matchableRecipes = liveRecipes
     .map((r) => ({ recipe: r, score: getPantryMatchScore(r) }))
     .filter(({ score }) => score >= 50)
     .sort((a, b) => b.score - a.score)
@@ -653,9 +659,9 @@ export default function PantryScreen() {
               </View>
             ))}
             <Text style={[styles.expiryHint, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Recipes that use these ingredients:</Text>
-            {MOCK_RECIPES.filter((r) =>
-              r.ingredients.some((ing) => expiringItems.some((e) => e.name.toLowerCase().includes(ing.name.toLowerCase().split(" ")[0])))
-            ).slice(0, 3).map((r) => (
+            {liveRecipes.filter((r: import("@/data/mockData").Recipe) =>
+              r.ingredients.some((ing: { name: string }) => expiringItems.some((e) => e.name.toLowerCase().includes(ing.name.toLowerCase().split(" ")[0])))
+            ).slice(0, 3).map((r: import("@/data/mockData").Recipe) => (
               <View key={r.id} style={[styles.expiryRecipe, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Feather name="book-open" size={16} color={colors.primary} />
                 <View style={{ flex: 1 }}>
