@@ -16,12 +16,14 @@ import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
+import { useSubscription } from "@/lib/revenuecat";
 
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userProfile, updateProfile } = useApp();
+  const { isSubscribed, restore, isRestoring } = useSubscription();
 
   const [notifExpiryAlerts, setNotifExpiryAlerts] = useState(true);
   const [notifMealReminders, setNotifMealReminders] = useState(true);
@@ -100,6 +102,48 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+
+        {/* ── Subscription card ── */}
+        {isSubscribed ? (
+          <View style={[styles.premiumCard, { backgroundColor: "#4CAF76" + "12", borderColor: "#4CAF76" + "35" }]}>
+            <View style={styles.premiumCardLeft}>
+              <View style={[styles.premiumBadge, { backgroundColor: "#4CAF76" }]}>
+                <Feather name="zap" size={14} color="#fff" />
+              </View>
+              <View>
+                <Text style={[styles.premiumTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Premium Active ✨</Text>
+                <Text style={[styles.premiumSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Unlimited AI Chef · Full features</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.premiumManageBtn, { borderColor: "#4CAF76" }]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); restore(); }}
+              disabled={isRestoring}
+            >
+              <Text style={[styles.premiumManageBtnText, { color: "#4CAF76", fontFamily: "Inter_600SemiBold" }]}>
+                {isRestoring ? "…" : "Manage"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.upgradeCard, { backgroundColor: "#F5A623" + "0E", borderColor: "#F5A623" + "40" }]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/paywall"); }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.upgradeCardLeft}>
+              <Text style={styles.upgradeEmoji}>✨</Text>
+              <View>
+                <Text style={[styles.upgradeTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Upgrade to Premium</Text>
+                <Text style={[styles.upgradeSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Unlimited AI · Smart expiry · S$4.99/mo</Text>
+              </View>
+            </View>
+            <View style={[styles.upgradeChevron, { backgroundColor: "#F5A623" }]}>
+              <Feather name="chevron-right" size={14} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* Account */}
         <SectionHeader title="ACCOUNT" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -229,4 +273,27 @@ const styles = StyleSheet.create({
   measurementToggle: { flexDirection: "row", borderRadius: 8, overflow: "hidden" },
   measurementBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   measurementBtnText: { fontSize: 13 },
+
+  premiumCard: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 16, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+  },
+  premiumCardLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  premiumBadge: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  premiumTitle: { fontSize: 15 },
+  premiumSub: { fontSize: 12, marginTop: 2 },
+  premiumManageBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100, borderWidth: 1.5 },
+  premiumManageBtnText: { fontSize: 13 },
+
+  upgradeCard: {
+    marginHorizontal: 16, marginTop: 16, borderRadius: 16, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+  },
+  upgradeCardLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  upgradeEmoji: { fontSize: 26 },
+  upgradeTitle: { fontSize: 15 },
+  upgradeSub: { fontSize: 12, marginTop: 2 },
+  upgradeChevron: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
 });

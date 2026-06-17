@@ -14,6 +14,7 @@ import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { BADGES } from "@/data/mockData";
 import { useRouter } from "expo-router";
+import { useSubscription } from "@/lib/revenuecat";
 
 const RECIPE_IMAGES: Record<string, ReturnType<typeof require>> = {
   "recipe-pasta": require("@/assets/images/recipe-pasta.png"),
@@ -45,6 +46,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userProfile, stats, savedRecipes, cookedRecipes, liveRecipes } = useApp();
+  const { isSubscribed } = useSubscription();
   const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Recipes");
   const [recipeSubtab, setRecipeSubtab] = useState<(typeof RECIPE_SUBTABS)[number]>("Saved Later");
 
@@ -93,7 +95,15 @@ export default function ProfileScreen() {
 
           {/* Info */}
           <View style={styles.profileInfo}>
-            <Text style={[styles.displayName, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>{userProfile.name}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={[styles.displayName, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>{userProfile.name}</Text>
+              {isSubscribed && (
+                <View style={[styles.premiumBadge, { backgroundColor: "#4CAF76" }]}>
+                  <Feather name="zap" size={9} color="#fff" />
+                  <Text style={[styles.premiumBadgeText, { fontFamily: "Inter_700Bold" }]}>PREMIUM</Text>
+                </View>
+              )}
+            </View>
             <Text style={[styles.username, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
               @{userProfile.name.toLowerCase().replace(/\s/g, "_")}
             </Text>
@@ -123,6 +133,26 @@ export default function ProfileScreen() {
               </View>
             </View>
           </View>
+
+          {/* Premium upgrade banner — free users only */}
+          {!isSubscribed && (
+            <TouchableOpacity
+              style={styles.upgradeCard}
+              onPress={() => router.push("/paywall")}
+              activeOpacity={0.85}
+            >
+              <View style={styles.upgradeLeft}>
+                <Text style={styles.upgradeEmoji}>✨</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.upgradeTitle, { color: "#141210", fontFamily: "Fraunces_700Bold" }]}>Unlock Premium</Text>
+                  <Text style={[styles.upgradeSub, { fontFamily: "Inter_400Regular" }]}>Unlimited AI · Smart expiry · S$4.99/mo</Text>
+                </View>
+              </View>
+              <View style={styles.upgradeArrow}>
+                <Feather name="arrow-right" size={14} color="#141210" />
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Tabs — sticky */}
@@ -381,4 +411,30 @@ const styles = StyleSheet.create({
   badgeDesc: { fontSize: 10, textAlign: "center", lineHeight: 14 },
   earnedBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 100 },
   earnedText: { fontSize: 10 },
+
+  premiumBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 100 },
+  premiumBadgeText: { color: "#fff", fontSize: 9, letterSpacing: 0.4 },
+
+  upgradeCard: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 4,
+    backgroundColor: "#F5A623",
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  upgradeLeft: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  upgradeEmoji: { fontSize: 24 },
+  upgradeTitle: { fontSize: 15 },
+  upgradeSub: { color: "rgba(20,18,16,0.65)", fontSize: 12, marginTop: 1 },
+  upgradeArrow: {
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: "rgba(20,18,16,0.12)",
+    alignItems: "center", justifyContent: "center",
+  },
 });
