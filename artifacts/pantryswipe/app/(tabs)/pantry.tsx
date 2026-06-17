@@ -25,6 +25,7 @@ import { PantryItem, Recipe } from "@/data/mockData";
 import { lookupBarcode, type BarcodeProduct } from "@/services/barcodeService";
 import ScanReceiptModal from "@/components/ScanReceiptModal";
 import ConfirmationEditScreen from "@/components/ConfirmationEditScreen";
+import { getItemEmoji } from "@/utils/emojiLookup";
 import type { DetectedItem } from "@/types/scanning";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -186,7 +187,7 @@ export default function PantryScreen() {
       unit: newItemUnit,
       category: newItemCategory,
       status: "Fresh",
-      emoji: "🛒",
+      emoji: getItemEmoji(newItemName.trim(), newItemCategory),
     };
     addToPantry(newItem);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -270,7 +271,7 @@ export default function PantryScreen() {
       unit: barcodeUnit,
       category: barcodeCategory,
       status: "Fresh",
-      emoji: categoryToEmoji(barcodeCategory),
+      emoji: getItemEmoji(foundProduct.name, barcodeCategory),
     };
     addToPantry(newItem);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -293,7 +294,7 @@ export default function PantryScreen() {
       unit: "pieces",
       category: manualCategory,
       status: "Fresh",
-      emoji: categoryToEmoji(manualCategory),
+      emoji: getItemEmoji(manualName.trim(), manualCategory),
     };
     addToPantry(newItem);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
