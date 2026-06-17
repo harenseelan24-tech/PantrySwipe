@@ -143,7 +143,7 @@ function SwipeableRow({
       onPanResponderRelease: (_, g) => {
         Animated.spring(tx, {
           toValue: g.dx < -REVEAL / 2 ? -REVEAL : 0,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== "web",
         }).start();
       },
     })
@@ -160,7 +160,7 @@ function SwipeableRow({
       >
         <TouchableOpacity
           style={{ flex: 1, width: "100%", alignItems: "center", justifyContent: "center", gap: 4 }}
-          onPress={() => { Animated.spring(tx, { toValue: 0, useNativeDriver: true }).start(); onDelete(); }}
+          onPress={() => { Animated.spring(tx, { toValue: 0, useNativeDriver: Platform.OS !== "web" }).start(); onDelete(); }}
         >
           <Feather name="trash-2" size={18} color="#fff" />
           <Text style={{ color: "#fff", fontSize: 10, fontFamily: "Inter_500Medium" }}>Remove</Text>
@@ -220,8 +220,7 @@ export default function PantryScreen() {
   const barcodeScanLock = useRef(false);
 
   const TAB_BAR_H = Platform.OS === "web" ? 68 : 60;
-  const [topH, setTopH] = useState(0);
-  const listHeight = topH > 0 ? Math.max(120, SCREEN_HEIGHT - TAB_BAR_H - topH) : 0;
+  const NATIVE_DRIVER = Platform.OS !== "web";
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
   // Animate scan line while camera is live
@@ -417,8 +416,12 @@ export default function PantryScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── TOP SECTION ── */}
-      <View onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: TAB_BAR_H + 20 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* ── HEADER ── */}
         <View style={[styles.header, { paddingTop: topPadding + 6 }]}>
           <View>
@@ -560,15 +563,9 @@ export default function PantryScreen() {
             })}
           </ScrollView>
         </View>
-      </View>
 
-      {/* ── ITEM LIST ── */}
-      <View style={{ height: listHeight || SCREEN_HEIGHT * 0.5, overflow: "hidden" }}>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        >
+        {/* ── ITEM LIST ── */}
+        <View style={styles.listContent}>
           {filtered.length === 0 ? (
             <View style={styles.emptyState}>
               <Feather name="shopping-bag" size={36} color={colors.textMuted} />
@@ -652,8 +649,8 @@ export default function PantryScreen() {
               </View>
             </View>
           )}
-        </ScrollView>
-      </View>
+        </View>
+      </ScrollView>
 
       {/* ── "WHAT CAN I MAKE?" BOTTOM SHEET ── */}
       <Modal
