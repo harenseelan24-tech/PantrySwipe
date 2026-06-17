@@ -123,14 +123,20 @@ export default function HomeScreen() {
 
   const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>(() => getPersonalizedRecipes(liveRecipes));
 
-  // Reload deck when live recipes or user profile changes (no mood active)
+  // Keep a stable ref so effects can call the latest version without listing it
+  // as a dependency (prevents deck-reset on every trackSwipe call).
+  const getPersonalizedRecipesRef = useRef(getPersonalizedRecipes);
+  useEffect(() => { getPersonalizedRecipesRef.current = getPersonalizedRecipes; }, [getPersonalizedRecipes]);
+
+  // Reload deck ONLY when the fetched recipe pool changes — NOT on every swipe
+  // (learning signal updates getPersonalizedRecipes reference but should not reset the deck mid-session).
   useEffect(() => {
     if (!activeMood) {
-      setFilteredRecipes(getPersonalizedRecipes(liveRecipes));
+      setFilteredRecipes(getPersonalizedRecipesRef.current(liveRecipes));
       setCurrentIndex(0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveRecipes, getPersonalizedRecipes]);
+  }, [liveRecipes]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeMood, setActiveMood] = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
