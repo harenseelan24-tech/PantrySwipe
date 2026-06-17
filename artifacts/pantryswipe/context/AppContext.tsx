@@ -30,6 +30,46 @@ const API_BASE = Platform.OS !== "web"
   ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}/api`
   : "/api";
 
+// ─── Personalization helpers ──────────────────────────────────────────────────
+const ALLERGEN_INGREDIENT_MAP: Record<string, string[]> = {
+  "Peanuts":    ["peanut", "peanut butter", "groundnut"],
+  "Tree Nuts":  ["almond", "cashew", "walnut", "pecan", "pistachio", "hazelnut", "macadamia", "pine nut"],
+  "Dairy":      ["milk", "butter", "cream", "cheese", "yogurt", "parmesan", "mozzarella", "ricotta", "feta", "ghee", "paneer"],
+  "Gluten":     ["flour", "bread", "pasta", "spaghetti", "noodle", "wheat", "oats", "ramen", "tortilla", "barley", "sourdough", "bun"],
+  "Eggs":       ["egg"],
+  "Shellfish":  ["shrimp", "prawn", "crab", "lobster", "scallop", "mussel", "clam", "oyster"],
+  "Fish":       ["salmon", "tuna", "cod", "fish", "anchovy", "sardine", "halibut", "tilapia", "mackerel"],
+  "Soy":        ["soy sauce", "tofu", "edamame", "miso", "tempeh", "soy milk"],
+  "Sesame":     ["sesame", "tahini"],
+  "Sulphites":  ["wine", "vinegar"],
+  "Corn":       ["corn", "cornstarch", "maize"],
+};
+
+function recipeContainsAllergen(recipe: Recipe, allergen: string): boolean {
+  const keywords = ALLERGEN_INGREDIENT_MAP[allergen] ?? [allergen.toLowerCase()];
+  const ingredientText = recipe.ingredients.map((i) => i.name.toLowerCase()).join(" | ");
+  return keywords.some((kw) => ingredientText.includes(kw.toLowerCase()));
+}
+
+function isDietMatch(recipe: Recipe, dietTypes: string[]): boolean {
+  if (!dietTypes.length || dietTypes.includes("Omnivore")) return true;
+  if (dietTypes.includes("Vegan"))
+    return recipe.dietTags.some((t) => t === "Vegan");
+  if (dietTypes.includes("Vegetarian"))
+    return recipe.dietTags.some((t) => ["Vegan", "Vegetarian"].includes(t));
+  if (dietTypes.includes("Pescatarian"))
+    return recipe.dietTags.some((t) => ["Vegan", "Vegetarian", "Pescatarian"].includes(t));
+  if (dietTypes.includes("Halal"))
+    return recipe.dietTags.some((t) => ["Halal", "Vegan", "Vegetarian"].includes(t));
+  if (dietTypes.includes("Keto"))
+    return recipe.dietTags.includes("Keto") || (recipe.nutrition.carbs <= 25 && recipe.nutrition.fat >= 20);
+  if (dietTypes.includes("Gluten-Free"))
+    return recipe.dietTags.includes("Gluten-Free");
+  if (dietTypes.includes("Paleo"))
+    return recipe.dietTags.includes("Paleo");
+  return dietTypes.some((dt) => recipe.dietTags.includes(dt));
+}
+
 // ─── API recipe shape ─────────────────────────────────────────────────────────
 interface ApiRecipe {
   id: number;
@@ -156,6 +196,7 @@ interface AppContextType {
   getPantryMatchScore: (recipe: Recipe) => number;
   getIngredientMatches: (recipe: Recipe) => Array<{ name: string; amount: string; inPantry: boolean; sufficient: boolean }>;
   refreshRecipes: () => void;
+  getPersonalizedRecipes: (pool?: Recipe[]) => Recipe[];
 }
 
 const defaultProfile: UserProfile = {
@@ -437,6 +478,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return [...liveRecipes].sort((a, b) => getPantryMatchScore(b) - getPantryMatchScore(a));
   };
 
+  const getPersonalizedRecipes = useCallback((pool?: Recipe[]): Recipe[] => {
+    const source = pool ?? liveRecipes;
+    const prefs = userProfile;
+    let filtered = [...source];
+
+    // 1. Cuisine filter — only show user's preferred cuisines if they set any
+    if (prefs.cuisinePreferences?.length > 0) {
+      const cuisineFiltered = filtered.filter((r) => prefs.cuisinePreferences.includes(r.cuisine));
+      if (cuisineFiltered.length >= 3) filtered = cuisineFiltered;
+    }
+
+    // 2. Diet type filter
+    if (!prefs.dietType.includes("Omnivore") && prefs.dietType.length > 0) {
+      const dietFiltered = filtered.filter((r) => isDietMatch(r, prefs.dietType));
+      if (dietFiltered.length > 0) filtered = dietFiltered;
+    }
+
+    // 3. Allergen filter — remove recipes containing user's allergens
+    if (prefs.allergies?.length > 0) {
+      filtered = filtered.filter(
+        (r) => !prefs.allergies.some((a) => recipeContainsAllergen(r, a))
+      );
+      // Safety: if all recipes are filtered out, show unfiltered pool
+      if (filtered.length === 0) filtered = [...source];
+    }
+
+    // 4. Skill level filter
+    if (prefs.skillLevel === "Beginner") {
+      const easy = filtered.filter((r) => r.difficulty === "Easy");
+      if (easy.length >= 3) filtered = easy;
+    } else if (prefs.skillLevel === "Home Cook") {
+      const manageable = filtered.filter((r) => r.difficulty !== "Hard");
+      if (manageable.length >= 3) filtered = manageable;
+    }
+
+    // 5. Goal-based sort
+    const goalSort = (a: Recipe, b: Recipe): number => {
+      switch (prefs.goal) {
+        case "Build Muscle":   return b.nutrition.protein - a.nutrition.protein;
+        case "Eat Healthier":  return (b.nutrition.fiber - a.nutrition.fiber) || (a.calories - b.calories);
+        case "Cook Faster":    return (a.prepTime + a.cookTime) - (b.prepTime + b.cookTime);
+        case "Cook for Others": return b.servings - a.servings;
+        case "Save Money":     return a.ingredients.length - b.ingredients.length;
+        default: return 0;
+      }
+    };
+
+    return [...filtered].sort(goalSort);
+  }, [liveRecipes, userProfile]);
+
   const refreshRecipes = useCallback(() => { fetchLiveRecipes(); }, [fetchLiveRecipes]);
 
   return (
@@ -448,6 +539,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addToPantry, removeFromPantry, updatePantryItem,
         saveRecipe, unsaveRecipe, markCooked, cookDish,
         getMatchingRecipes, getPantryMatchScore, getIngredientMatches, refreshRecipes,
+        getPersonalizedRecipes,
       }}
     >
       {children}

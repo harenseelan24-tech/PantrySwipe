@@ -41,6 +41,19 @@ const ALL_CUISINES = [
   { name: "Mediterranean", flag: "🌊", count: 5 },
 ];
 
+const GOAL_EMOJI: Record<string, string> = {
+  "Build Muscle": "💪", "Eat Healthier": "🥗", "Save Money": "💰",
+  "Cook Faster": "⚡", "Explore Cuisines": "🌍", "Cook for Others": "👨‍👩‍👧",
+  "Meal Prep": "🥡", "Reduce Waste": "♻️", "Lose Weight": "🏃",
+};
+
+const SKILL_BADGE: Record<string, { emoji: string; color: string }> = {
+  "Beginner":   { emoji: "🌱", color: "#4CAF76" },
+  "Home Cook":  { emoji: "🍳", color: "#F5A623" },
+  "Confident":  { emoji: "👨‍🍳", color: "#5B8EF5" },
+  "Advanced":   { emoji: "⭐", color: "#E84040" },
+};
+
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -49,6 +62,7 @@ export default function ProfileScreen() {
   const { isSubscribed } = useSubscription();
   const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Recipes");
   const [recipeSubtab, setRecipeSubtab] = useState<(typeof RECIPE_SUBTABS)[number]>("Saved Later");
+  const [showAllergies, setShowAllergies] = useState(false);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
@@ -115,6 +129,77 @@ export default function ProfileScreen() {
                 </View>
               ))}
             </View>
+
+            {/* Skill level + Goal badges */}
+            {(userProfile.skillLevel || userProfile.goal) ? (
+              <View style={styles.profileBadgeRow}>
+                {userProfile.skillLevel ? (() => {
+                  const badge = SKILL_BADGE[userProfile.skillLevel] ?? { emoji: "🍳", color: "#F5A623" };
+                  return (
+                    <View style={[styles.profileBadge, { backgroundColor: badge.color + "20", borderColor: badge.color + "40" }]}>
+                      <Text style={{ fontSize: 12 }}>{badge.emoji}</Text>
+                      <Text style={[styles.profileBadgeText, { color: badge.color, fontFamily: "Inter_600SemiBold" }]}>
+                        {userProfile.skillLevel}
+                      </Text>
+                    </View>
+                  );
+                })() : null}
+                {userProfile.goal ? (
+                  <View style={[styles.profileBadge, { backgroundColor: colors.saveBlue + "15", borderColor: colors.saveBlue + "30" }]}>
+                    <Text style={{ fontSize: 12 }}>{GOAL_EMOJI[userProfile.goal] ?? "🎯"}</Text>
+                    <Text style={[styles.profileBadgeText, { color: colors.saveBlue, fontFamily: "Inter_600SemiBold" }]}>
+                      {userProfile.goal}
+                    </Text>
+                  </View>
+                ) : null}
+                {userProfile.weeklyBudget > 0 ? (
+                  <View style={[styles.profileBadge, { backgroundColor: "#4CAF7620", borderColor: "#4CAF7640" }]}>
+                    <Feather name="dollar-sign" size={11} color="#4CAF76" />
+                    <Text style={[styles.profileBadgeText, { color: "#4CAF76", fontFamily: "Inter_600SemiBold" }]}>
+                      ${userProfile.weeklyBudget}/wk
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Allergies with show/hide toggle */}
+            {userProfile.allergies.length > 0 ? (
+              <View style={styles.allergySection}>
+                <TouchableOpacity
+                  style={styles.allergyToggle}
+                  onPress={() => setShowAllergies(!showAllergies)}
+                  activeOpacity={0.7}
+                >
+                  <Feather name={showAllergies ? "eye" : "eye-off"} size={13} color={colors.textSecondary} />
+                  <Text style={[styles.allergyToggleText, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
+                    Allergies ({userProfile.allergies.length})
+                  </Text>
+                </TouchableOpacity>
+                {showAllergies ? (
+                  <View style={styles.allergyTags}>
+                    {userProfile.allergies.map((a) => (
+                      <View key={a} style={[styles.allergyTag, { backgroundColor: "#E8404015", borderColor: "#E8404040" }]}>
+                        <Text style={{ fontSize: 10 }}>⚠️</Text>
+                        <Text style={[styles.allergyTagText, { color: "#E84040", fontFamily: "Inter_600SemiBold" }]}>{a}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Cuisine preferences */}
+            {userProfile.cuisinePreferences.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginLeft: -20, paddingLeft: 20 }} contentContainerStyle={styles.cuisinePrefRow}>
+                {userProfile.cuisinePreferences.map((c) => (
+                  <View key={c} style={[styles.cuisinePrefTag, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={{ fontSize: 13 }}>{CUISINE_EMOJIS[c] ?? "🍽️"}</Text>
+                    <Text style={[styles.cuisinePrefText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>{c}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            ) : null}
 
             <View style={styles.statsRow}>
               <TouchableOpacity style={styles.statItem} onPress={() => { setActiveTab("Recipes"); setRecipeSubtab("Made"); }}>
@@ -414,6 +499,21 @@ const styles = StyleSheet.create({
 
   premiumBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 100 },
   premiumBadgeText: { color: "#fff", fontSize: 9, letterSpacing: 0.4 },
+
+  profileBadgeRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  profileBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
+  profileBadgeText: { fontSize: 12 },
+
+  allergySection: { gap: 6 },
+  allergyToggle: { flexDirection: "row", alignItems: "center", gap: 5 },
+  allergyToggleText: { fontSize: 12 },
+  allergyTags: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  allergyTag: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, borderWidth: 1 },
+  allergyTagText: { fontSize: 11 },
+
+  cuisinePrefRow: { gap: 8, paddingRight: 20, paddingVertical: 2 },
+  cuisinePrefTag: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
+  cuisinePrefText: { fontSize: 12 },
 
   upgradeCard: {
     marginHorizontal: 20,

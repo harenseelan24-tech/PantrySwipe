@@ -110,7 +110,7 @@ export default function HomeScreen() {
   const { unreadCount } = useNotifications();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { userProfile, getPantryMatchScore, saveRecipe, pantryItems, liveRecipes } = useApp();
+  const { userProfile, getPantryMatchScore, saveRecipe, pantryItems, liveRecipes, getPersonalizedRecipes } = useApp();
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const hasBanner = pantryItems.length > 0;
@@ -121,16 +121,16 @@ export default function HomeScreen() {
     SCREEN_HEIGHT - HEADER_TOTAL - SEARCH_H - MOOD_H - (hasBanner ? BANNER_H : 0) - TAB_BAR_H - 12
   );
 
-  const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>(liveRecipes);
+  const [filteredRecipes, setFilteredRecipes] = useState<Recipe[]>(() => getPersonalizedRecipes(liveRecipes));
 
-  // Reload deck when live recipes arrive from the API (no mood active)
+  // Reload deck when live recipes or user profile changes (no mood active)
   useEffect(() => {
     if (!activeMood) {
-      setFilteredRecipes(liveRecipes);
+      setFilteredRecipes(getPersonalizedRecipes(liveRecipes));
       setCurrentIndex(0);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveRecipes]);
+  }, [liveRecipes, getPersonalizedRecipes]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeMood, setActiveMood] = useState<string | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
@@ -242,10 +242,11 @@ export default function HomeScreen() {
   const applyMood = useCallback((mood: string) => {
     const moodObj = MOODS.find((m) => m.label === mood);
     if (!moodObj) return;
-    const filtered = liveRecipes.filter(moodObj.filter);
-    setFilteredRecipes(filtered.length > 0 ? filtered : liveRecipes);
+    const personalized = getPersonalizedRecipes(liveRecipes);
+    const filtered = personalized.filter(moodObj.filter);
+    setFilteredRecipes(filtered.length > 0 ? filtered : personalized);
     setCurrentIndex(0);
-  }, [liveRecipes]);
+  }, [liveRecipes, getPersonalizedRecipes]);
 
   const triggerParticles = useCallback((type: "right" | "left" | "up") => {
     const emojis =
@@ -317,15 +318,17 @@ export default function HomeScreen() {
           if (intent.type === "mealType") {
             const mealType = intent.value as "Breakfast" | "Lunch" | "Dinner";
             const f = MEAL_TYPE_FILTERS[mealType];
-            const r = liveRecipes.filter(f);
+            const personalized = getPersonalizedRecipes(liveRecipes);
+            const r = personalized.filter(f);
             setActiveMealType(mealType);
             setActiveMood(null);
             setActiveIngredient(null);
-            setFilteredRecipes(r.length >= 3 ? r : liveRecipes);
+            setFilteredRecipes(r.length >= 3 ? r : personalized);
             setCurrentIndex(0);
           } else if (intent.type === "ingredient") {
             const ing = intent.value.toLowerCase();
-            const r = liveRecipes.filter((recipe) =>
+            const personalized = getPersonalizedRecipes(liveRecipes);
+            const r = personalized.filter((recipe) =>
               recipe.ingredients.some((i) => i.name.toLowerCase().includes(ing)) ||
               recipe.title.toLowerCase().includes(ing) ||
               recipe.tags.some((t) => t.toLowerCase().includes(ing))
@@ -333,7 +336,7 @@ export default function HomeScreen() {
             setActiveIngredient(intent.value);
             setActiveMealType(null);
             setActiveMood(null);
-            setFilteredRecipes(r.length >= 2 ? r : liveRecipes);
+            setFilteredRecipes(r.length >= 2 ? r : personalized);
             setCurrentIndex(0);
           }
         } catch {}
@@ -343,12 +346,12 @@ export default function HomeScreen() {
   );
 
   const resetCards = useCallback(() => {
-    setFilteredRecipes(liveRecipes);
+    setFilteredRecipes(getPersonalizedRecipes(liveRecipes));
     setCurrentIndex(0);
     setActiveMood(null);
     setActiveMealType(null);
     setActiveIngredient(null);
-  }, [liveRecipes]);
+  }, [liveRecipes, getPersonalizedRecipes]);
 
   const searchResults = SEARCH_VARIANTS.filter((v) =>
     v.label.toLowerCase().includes(searchQuery.toLowerCase()) ||

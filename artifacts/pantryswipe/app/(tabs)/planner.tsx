@@ -57,7 +57,7 @@ export default function PlannerScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { cookedRecipes, cookingHistory, liveRecipes } = useApp();
+  const { cookedRecipes, cookingHistory, liveRecipes, userProfile } = useApp();
 
   const [view, setView] = useState<ViewType>("Week");
   const [mealPlan, setMealPlan] = useState<MealPlan>(EMPTY_PLAN);
@@ -222,6 +222,26 @@ export default function PlannerScreen() {
             <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>this week</Text>
           </View>
         </View>
+
+        {/* Budget awareness banner */}
+        {userProfile.weeklyBudget > 0 && (
+          <View style={[styles.budgetBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Feather name="dollar-sign" size={14} color={colors.primary} />
+            <Text style={[styles.budgetBannerText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
+              Weekly grocery budget:{" "}
+              <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>
+                ${userProfile.weeklyBudget}
+              </Text>
+            </Text>
+            {userProfile.goal ? (
+              <View style={[styles.budgetGoalPill, { backgroundColor: colors.primary + "20" }]}>
+                <Text style={[{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 11 }]}>
+                  Goal: {userProfile.goal}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        )}
 
         {/* Meal type filter pills */}
         <View style={styles.mealTypeRow}>
@@ -427,6 +447,9 @@ const styles = StyleSheet.create({
   summaryCard: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 14, borderWidth: 1, gap: 3 },
   summaryValue: { fontSize: 18 },
   summaryLabel: { fontSize: 10, textAlign: "center" },
+  budgetBanner: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14, flexWrap: "wrap" },
+  budgetBannerText: { flex: 1, fontSize: 13 },
+  budgetGoalPill: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 100 },
   mealTypeRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
   mealTypePill: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderRadius: 12, borderWidth: 1 },
   mealTypePillText: { fontSize: 12 },
