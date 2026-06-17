@@ -176,8 +176,8 @@ export default function SettingsScreen() {
         <SectionHeader title="ABOUT" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="info" label="Version" value="1.0.0" onPress={() => {}} />
-          <SettingRow icon="file-text" label="Terms of Service" onPress={() => {}} />
-          <SettingRow icon="shield" label="Privacy Policy" onPress={() => {}} />
+          <SettingRow icon="file-text" label="Terms of Service" onPress={() => router.push("/terms-of-service")} />
+          <SettingRow icon="shield" label="Privacy Policy" onPress={() => router.push("/privacy-policy")} />
           <SettingRow icon="star" label="Rate PantrySwipe" onPress={() => {}} />
           <SettingRow icon="help-circle" label="Help & Support" onPress={() => {}} />
         </View>

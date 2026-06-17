@@ -425,17 +425,19 @@ export default function OnboardingScreen() {
             </View>
           )}
 
-          <TouchableOpacity style={styles.termsRow} onPress={() => setTermsChecked(!termsChecked)}>
-            <View style={[styles.checkbox, termsChecked && styles.checkboxOn]}>
-              {termsChecked && <Feather name="check" size={12} color="#fff" />}
-            </View>
+          <View style={styles.termsRow}>
+            <TouchableOpacity onPress={() => setTermsChecked(!termsChecked)} activeOpacity={0.7}>
+              <View style={[styles.checkbox, termsChecked && styles.checkboxOn]}>
+                {termsChecked && <Feather name="check" size={12} color="#fff" />}
+              </View>
+            </TouchableOpacity>
             <Text style={styles.termsText}>
               I agree to the{" "}
-              <Text style={{ color: OB.blue, fontWeight: "600" }}>Terms of Service</Text>
+              <Text style={{ color: OB.blue, fontWeight: "600" }} onPress={() => router.push("/terms-of-service")}>Terms of Service</Text>
               {" "}and{" "}
-              <Text style={{ color: OB.blue, fontWeight: "600" }}>Privacy Policy</Text>
+              <Text style={{ color: OB.blue, fontWeight: "600" }} onPress={() => router.push("/privacy-policy")}>Privacy Policy</Text>
             </Text>
-          </TouchableOpacity>
+          </View>
           {showErrors && !termsChecked && <Text style={styles.errMsg}>Please accept the terms to continue</Text>}
           <View style={{ height: 32 }} />
         </ScrollView>

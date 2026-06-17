@@ -33,6 +33,8 @@ function RootLayoutNav() {
       <Stack.Screen name="party-planner" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="notifications" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="settings" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="privacy-policy" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="terms-of-service" options={{ headerShown: false, animation: "slide_from_right" }} />
     </Stack>
   );
 }

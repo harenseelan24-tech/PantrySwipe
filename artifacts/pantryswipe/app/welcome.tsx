@@ -64,7 +64,12 @@ export default function WelcomeScreen() {
             <Text style={styles.secondaryButtonText}>Sign In</Text>
           </TouchableOpacity>
 
-          <Text style={styles.legalText}>By continuing, you agree to our Terms & Privacy Policy</Text>
+          <Text style={styles.legalText}>
+            By continuing, you agree to our{" "}
+            <Text style={styles.legalLink} onPress={() => router.push("/terms-of-service")}>Terms of Service</Text>
+            {" & "}
+            <Text style={styles.legalLink} onPress={() => router.push("/privacy-policy")}>Privacy Policy</Text>
+          </Text>
         </View>
       </Animated.View>
     </View>
@@ -88,4 +93,5 @@ const styles = StyleSheet.create({
   secondaryButton: { height: 56, borderRadius: 100, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.5)" },
   secondaryButtonText: { color: "#fff", fontSize: 17, fontWeight: "600" },
   legalText: { fontSize: 11, color: "rgba(255,255,255,0.45)", textAlign: "center", lineHeight: 16 },
+  legalLink: { color: "rgba(255,255,255,0.75)", fontWeight: "600", textDecorationLine: "underline" },
 });
