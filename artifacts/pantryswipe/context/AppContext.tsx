@@ -531,10 +531,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const prefs = userProfile;
     let filtered = [...source];
 
-    // 1. Cuisine filter — only show user's preferred cuisines if they set any
+    // 1. Cuisine filter — only show user's preferred cuisines if they set any.
+    // Fallback to full pool ONLY if zero matches (not < 3, which hides valid single results).
     if (prefs.cuisinePreferences?.length > 0) {
       const cuisineFiltered = filtered.filter((r) => prefs.cuisinePreferences.includes(r.cuisine));
-      if (cuisineFiltered.length >= 3) filtered = cuisineFiltered;
+      if (cuisineFiltered.length > 0) filtered = cuisineFiltered;
     }
 
     // 2. Diet type filter
