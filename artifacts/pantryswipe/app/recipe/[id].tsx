@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -28,13 +29,24 @@ const RECIPE_IMAGES: Record<string, ReturnType<typeof require>> = {
 };
 
 const AI_VARIATIONS = [
-  { label: "Make Vegetarian", icon: "wind" as const, color: "#4CAF76" },
-  { label: "Budget Version", icon: "dollar-sign" as const, color: "#F5A623" },
-  { label: "High Protein", icon: "trending-up" as const, color: "#5B8EF5" },
-  { label: "Spicier", icon: "zap" as const, color: "#E84040" },
-  { label: "Make Halal", icon: "check-circle" as const, color: "#9B6DFF" },
-  { label: "Faster Version", icon: "clock" as const, color: "#F5A623" },
+  { label: "High Protein",      icon: "trending-up" as const,  color: "#5B8EF5" },
+  { label: "Spicier",           icon: "zap" as const,           color: "#E84040" },
+  { label: "Make Vegetarian",   icon: "wind" as const,          color: "#4CAF76" },
+  { label: "Make Halal",        icon: "check-circle" as const,  color: "#9B6DFF" },
+  { label: "Budget Version",    icon: "dollar-sign" as const,   color: "#F5A623" },
+  { label: "Faster Version",    icon: "clock" as const,         color: "#F5A623" },
 ];
+
+const SERVING_PRESETS = [1, 2, 4, 6, 8];
+
+const VARIATION_MACRO_ADJUST: Record<string, { protein: number; carbs: number; fat: number; calories: number }> = {
+  "High Protein":    { protein: 1.65, carbs: 0.70, fat: 0.85, calories: 1.10 },
+  "Make Vegetarian": { protein: 0.75, carbs: 1.20, fat: 0.90, calories: 0.90 },
+  "Budget Version":  { protein: 0.88, carbs: 1.10, fat: 1.00, calories: 0.95 },
+  "Spicier":         { protein: 1.00, carbs: 1.00, fat: 1.05, calories: 1.03 },
+  "Make Halal":      { protein: 1.00, carbs: 1.00, fat: 1.00, calories: 1.00 },
+  "Faster Version":  { protein: 0.92, carbs: 0.90, fat: 0.88, calories: 0.92 },
+};
 
 type MealType = "Breakfast" | "Lunch" | "Dinner";
 
@@ -56,9 +68,11 @@ export default function RecipeDetailScreen() {
   const [cookMode, setCookMode] = useState(false);
   const [cookModeStep, setCookModeStep] = useState(0);
 
-  // ── Servings & meal type (from swipe params) ─────────────────────────────────
+  // ── Servings & meal type ─────────────────────────────────────────────────────
   const [selectedServings, setSelectedServings] = useState(recipe?.servings ?? 2);
   const [selectedMealType, setSelectedMealType] = useState<MealType>("Dinner");
+  const [customServingsMode, setCustomServingsMode] = useState(false);
+  const [customServingsInput, setCustomServingsInput] = useState("");
 
   useEffect(() => {
     if (recipe) {
@@ -101,6 +115,8 @@ export default function RecipeDetailScreen() {
   const [varIngredients, setVarIngredients] = useState<Array<{ name: string; amount: string; inPantry: boolean }> | null>(null);
   const [varSteps, setVarSteps] = useState<Array<{ step: number; instruction: string; timerMinutes?: number }> | null>(null);
   const [varNotes, setVarNotes] = useState<string | null>(null);
+  const [varAdditions, setVarAdditions] = useState<Array<{ name: string; amount: string; inPantry: boolean }>>([]);
+  const [selectedAdditions, setSelectedAdditions] = useState<Set<string>>(new Set());
 
   // ── Timer state ──────────────────────────────────────────────────────────────
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
@@ -166,9 +182,35 @@ export default function RecipeDetailScreen() {
     return unit ? `${display} ${unit}` : display;
   };
 
+  // ── Clear variation helper ───────────────────────────────────────────────────
+  const clearVariation = () => {
+    setAppliedVariation(null);
+    setVarIngredients(null);
+    setVarSteps(null);
+    setVarNotes(null);
+    setVarAdditions([]);
+    setSelectedAdditions(new Set());
+  };
+
+  // ── Toggle an addition in/out of selected set ────────────────────────────────
+  const toggleAddition = (name: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedAdditions((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
   // ── AI Variation handler ─────────────────────────────────────────────────────
   const handleVariation = async (variationType: string) => {
     if (!recipe || variationLoading) return;
+    // Tap again to clear
+    if (appliedVariation === variationType) {
+      clearVariation();
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setVariationLoading(variationType);
     try {
@@ -187,13 +229,24 @@ export default function RecipeDetailScreen() {
       });
       if (!res.ok) throw new Error("API error");
       const data = await res.json();
+
+      // Compute which ingredients are NEW (not in original recipe)
+      const originalNames = new Set(
+        recipe.ingredients.map((i) => i.name.toLowerCase().trim())
+      );
+      const additions: Array<{ name: string; amount: string; inPantry: boolean }> = (data.ingredients ?? []).filter(
+        (ing: { name: string }) => !originalNames.has(ing.name.toLowerCase().trim())
+      );
+
       setVarIngredients(data.ingredients ?? null);
       setVarSteps(data.steps ?? null);
       setVarNotes(data.notes ?? null);
+      setVarAdditions(additions);
+      setSelectedAdditions(new Set(additions.map((a) => a.name)));
       setAppliedVariation(variationType);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      // silently ignore - user can retry
+      // silently ignore — user can retry
     } finally {
       setVariationLoading(null);
     }
@@ -217,8 +270,28 @@ export default function RecipeDetailScreen() {
   const missingIngredients = enrichedIngredients.filter((i) => !i.inPantry);
 
   const servingRatio = selectedServings / Math.max(1, recipe.servings);
-  const displayIngredients = varIngredients ?? recipe.ingredients;
   const displaySteps = varSteps ?? recipe.steps;
+
+  // ── Pantry match with active additions ───────────────────────────────────────
+  const activeAdditions = varAdditions.filter((a) => selectedAdditions.has(a.name));
+  const displayPantryIngredients = appliedVariation
+    ? [...pantryIngredients, ...activeAdditions.filter((a) => a.inPantry)]
+    : pantryIngredients;
+  const displayMissingIngredients = appliedVariation
+    ? [...missingIngredients, ...activeAdditions.filter((a) => !a.inPantry)]
+    : missingIngredients;
+  const totalDisplayIngredients = displayPantryIngredients.length + displayMissingIngredients.length;
+  const displayMatchScore = totalDisplayIngredients > 0
+    ? Math.round((displayPantryIngredients.length / totalDisplayIngredients) * 100)
+    : matchScore;
+
+  // ── Nutrition (always per-serving, adjusted by variation) ─────────────────────
+  const macroAdj = appliedVariation ? (VARIATION_MACRO_ADJUST[appliedVariation] ?? null) : null;
+  const displayCalories = Math.round(recipe.calories * (macroAdj?.calories ?? 1));
+  const displayProtein  = Math.round(recipe.nutrition.protein * (macroAdj?.protein ?? 1));
+  const displayCarbs    = Math.round(recipe.nutrition.carbs   * (macroAdj?.carbs   ?? 1));
+  const displayFat      = Math.round(recipe.nutrition.fat     * (macroAdj?.fat     ?? 1));
+  const displayFiber    = Math.round(recipe.nutrition.fiber);
 
   const imageSource = recipe.image
     ? recipe.image.startsWith("http")
@@ -245,19 +318,75 @@ export default function RecipeDetailScreen() {
     );
   };
 
+  // ── Render instruction as bullet points ──────────────────────────────────────
+  const renderBulletInstruction = (instruction: string, textStyle: object) => {
+    const lines = instruction.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length <= 1) {
+      return <Text style={textStyle}>{instruction}</Text>;
+    }
+    return (
+      <View style={{ gap: 6 }}>
+        {lines.map((line, i) => (
+          <View key={i} style={{ flexDirection: "row", gap: 8, alignItems: "flex-start" }}>
+            <Text style={[textStyle, { color: (textStyle as any).color, lineHeight: 20, marginTop: 1 }]}>•</Text>
+            <Text style={[textStyle, { flex: 1 }]}>
+              {line.startsWith("•") ? line.slice(1).trim() : line}
+            </Text>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
   // ── Cook Mode ────────────────────────────────────────────────────────────────
   if (cookMode) {
     const currentStep = displaySteps[cookModeStep];
     const isLast = cookModeStep === displaySteps.length - 1;
+    const isTimerActiveForStep = timerRunning && timerLabel === `Step ${currentStep.step}`;
+
+    const handleFinishCooking = () => {
+      const deducted = cookDish(recipe, selectedMealType, selectedServings);
+      setCelebrationData({
+        deducted,
+        used: pantryIngredients.map((i) => ({ name: i.name, amount: i.amount })),
+        needStock: missingIngredients.map((i) => ({ name: i.name, amount: i.amount })),
+      });
+      setCookMode(false);
+      setShowCelebration(true);
+    };
+
     return (
       <View style={[styles.cookMode, { backgroundColor: "#141210" }]}>
+        {/* Header: ← (back/close) | Cook Mode | progress → (next) */}
         <View style={[styles.cookModeHeader, { paddingTop: topPadding + 8 }]}>
-          <TouchableOpacity onPress={() => setCookMode(false)}>
-            <Feather name="x" size={24} color="#F0EDE8" />
+          <TouchableOpacity
+            onPress={() => {
+              if (cookModeStep === 0) setCookMode(false);
+              else setCookModeStep((s) => s - 1);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Feather name={cookModeStep === 0 ? "x" : "arrow-left"} size={24} color="#F0EDE8" />
           </TouchableOpacity>
+
           <Text style={styles.cookModeTitle}>Cook Mode</Text>
-          <Text style={styles.cookModeProgress}>{cookModeStep + 1}/{displaySteps.length}</Text>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Text style={styles.cookModeProgress}>{cookModeStep + 1}/{displaySteps.length}</Text>
+            {!isLast ? (
+              <TouchableOpacity
+                onPress={() => setCookModeStep((s) => s + 1)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="arrow-right" size={24} color="#F0EDE8" />
+              </TouchableOpacity>
+            ) : (
+              <View style={{ width: 24 }} />
+            )}
+          </View>
         </View>
+
+        {/* In-cook timer pill */}
         {timerSeconds !== null && (
           <Animated.View style={[styles.cookModeTimerPill, { opacity: timerPillAnim, transform: [{ scale: timerPillAnim }] }]}>
             <Feather name="clock" size={15} color={timerSeconds === 0 ? "#fff" : colors.saffron} />
@@ -273,54 +402,64 @@ export default function RecipeDetailScreen() {
             </TouchableOpacity>
           </Animated.View>
         )}
-        <View style={styles.cookModeContent}>
+
+        {/* Step content */}
+        <ScrollView style={styles.cookModeContent} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
           <View style={[styles.cookModeStepNum, { backgroundColor: colors.saffron }]}>
             <Text style={styles.cookModeStepNumText}>{currentStep.step}</Text>
           </View>
-          <Text style={styles.cookModeInstruction}>{currentStep.instruction}</Text>
-          {currentStep.timerMinutes && (
+          <View style={{ gap: 10 }}>
+            {currentStep.instruction.split("\n").map((l) => l.trim()).filter(Boolean).map((line, idx) => (
+              <View key={idx} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+                <Text style={[styles.cookModeBulletDot, { color: colors.saffron }]}>•</Text>
+                <Text style={[styles.cookModeInstruction, { flex: 1 }]}>
+                  {line.startsWith("•") ? line.slice(1).trim() : line}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Footer: Start Timer or Done Cooking */}
+        <View style={[styles.cookModeFooter, { paddingBottom: bottomPadding + 16 }]}>
+          {currentStep.timerMinutes ? (
             <TouchableOpacity
-              style={[styles.cookModeTimer, { backgroundColor: timerRunning && timerLabel === `Step ${currentStep.step}` ? colors.saffron + "25" : "#1E1B18" }]}
+              style={[styles.cookModeBtn, styles.cookModeNextBtn, {
+                backgroundColor: isTimerActiveForStep ? "#2A2720" : colors.saffron,
+                borderWidth: isTimerActiveForStep ? 1 : 0,
+                borderColor: colors.saffron,
+              }]}
               onPress={() => startTimer(currentStep.timerMinutes!, `Step ${currentStep.step}`)}
             >
-              <Feather name="clock" size={20} color={colors.saffron} />
-              <Text style={[styles.cookModeTimerText, { color: colors.saffron }]}>
-                {timerRunning && timerLabel === `Step ${currentStep.step}`
+              <Feather name="clock" size={22} color={isTimerActiveForStep ? colors.saffron : "#fff"} />
+              <Text style={[styles.cookModeBtnText, { color: isTimerActiveForStep ? colors.saffron : "#fff" }]}>
+                {isTimerActiveForStep
                   ? `Running: ${formatTime(timerSeconds ?? 0)}`
                   : `Start ${currentStep.timerMinutes} min Timer`}
               </Text>
             </TouchableOpacity>
-          )}
-        </View>
-        <View style={[styles.cookModeFooter, { paddingBottom: bottomPadding + 16 }]}>
-          {cookModeStep > 0 && (
-            <TouchableOpacity style={[styles.cookModeBtn, { backgroundColor: "#1E1B18" }]} onPress={() => setCookModeStep((s) => s - 1)}>
-              <Feather name="arrow-left" size={22} color="#F0EDE8" />
-              <Text style={styles.cookModeBtnText}>Previous</Text>
+          ) : isLast ? (
+            <TouchableOpacity
+              style={[styles.cookModeBtn, styles.cookModeNextBtn, { backgroundColor: "#4CAF76" }]}
+              onPress={handleFinishCooking}
+            >
+              <Text style={[styles.cookModeBtnText, { color: "#fff" }]}>Done Cooking! 🎉</Text>
             </TouchableOpacity>
+          ) : (
+            <View style={[styles.cookModeBtn, styles.cookModeNextBtn, { backgroundColor: "transparent" }]}>
+              <Text style={[styles.cookModeBtnText, { color: "#555", fontSize: 14 }]}>
+                Use ← → above to navigate steps
+              </Text>
+            </View>
           )}
-          <TouchableOpacity
-            style={[styles.cookModeBtn, styles.cookModeNextBtn, { backgroundColor: isLast ? "#4CAF76" : colors.saffron }]}
-            onPress={() => {
-              if (isLast) {
-                const deducted = cookDish(recipe, selectedMealType, selectedServings);
-                setCelebrationData({
-                  deducted,
-                  used: pantryIngredients.map((i) => ({ name: i.name, amount: i.amount })),
-                  needStock: missingIngredients.map((i) => ({ name: i.name, amount: i.amount })),
-                });
-                setCookMode(false);
-                setShowCelebration(true);
-              } else {
-                setCookModeStep((s) => s + 1);
-              }
-            }}
-          >
-            <Text style={[styles.cookModeBtnText, { color: "#fff" }]}>
-              {isLast ? "Done Cooking! 🎉" : "Next Step"}
-            </Text>
-            {!isLast && <Feather name="arrow-right" size={22} color="#fff" />}
-          </TouchableOpacity>
+          {isLast && currentStep.timerMinutes ? (
+            <TouchableOpacity
+              style={[styles.cookModeBtn, { backgroundColor: "#4CAF76" }]}
+              onPress={handleFinishCooking}
+            >
+              <Text style={[styles.cookModeBtnText, { color: "#fff" }]}>Finish 🎉</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     );
@@ -395,44 +534,102 @@ export default function RecipeDetailScreen() {
             </View>
           </View>
 
-          {/* Servings adjuster */}
-          <View style={[styles.servingsRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.servingsLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Servings</Text>
+          {/* Servings selector */}
+          <View style={[styles.servingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={[styles.servingsLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                How many people?
+              </Text>
               <Text style={[styles.servingsMealType, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
-                {selectedMealType} · Ingredients scaled automatically
+                {selectedMealType} · Ingredients scale automatically
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.servingsBtn, { backgroundColor: colors.muted }]}
-              onPress={() => setSelectedServings((s) => Math.max(1, s - 1))}
-            >
-              <Feather name="minus" size={16} color={colors.foreground} />
-            </TouchableOpacity>
-            <Text style={[styles.servingsCount, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
-              {selectedServings}
-            </Text>
-            <TouchableOpacity
-              style={[styles.servingsBtn, { backgroundColor: colors.muted }]}
-              onPress={() => setSelectedServings((s) => Math.min(12, s + 1))}
-            >
-              <Feather name="plus" size={16} color={colors.foreground} />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {SERVING_PRESETS.map((n) => {
+                const active = selectedServings === n && !customServingsMode;
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    style={[styles.servingChip, {
+                      backgroundColor: active ? colors.saffron : colors.muted,
+                      borderColor: active ? colors.saffron : colors.border,
+                    }]}
+                    onPress={() => { setSelectedServings(n); setCustomServingsMode(false); }}
+                  >
+                    <Text style={[styles.servingChipText, { color: active ? "#fff" : colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
+                      {n}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[styles.servingChip, {
+                  backgroundColor: customServingsMode ? colors.saffron : colors.muted,
+                  borderColor: customServingsMode ? colors.saffron : colors.border,
+                  paddingHorizontal: 14,
+                }]}
+                onPress={() => {
+                  setCustomServingsMode(true);
+                  setCustomServingsInput(String(selectedServings));
+                }}
+              >
+                <Feather
+                  name="edit-2"
+                  size={12}
+                  color={customServingsMode ? "#fff" : colors.mutedForeground}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={[styles.servingChipText, { color: customServingsMode ? "#fff" : colors.mutedForeground, fontFamily: "Inter_500Medium" }]}>
+                  {customServingsMode ? `${selectedServings} custom` : "Custom"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {customServingsMode && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 }}>
+                <TextInput
+                  style={[styles.customServingsInput, {
+                    backgroundColor: colors.muted,
+                    borderColor: colors.saffron,
+                    color: colors.foreground,
+                  }]}
+                  value={customServingsInput}
+                  onChangeText={setCustomServingsInput}
+                  keyboardType="number-pad"
+                  placeholder="Enter amount…"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => {
+                    const n = parseInt(customServingsInput, 10);
+                    if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99));
+                  }}
+                  onBlur={() => {
+                    const n = parseInt(customServingsInput, 10);
+                    if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99));
+                  }}
+                />
+                <Text style={[{ color: colors.mutedForeground, fontSize: 14, fontFamily: "Inter_400Regular" }]}>
+                  {selectedServings} serving{selectedServings !== 1 ? "s" : ""} selected
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Pantry Match Panel */}
           <View style={[styles.matchPanel, { backgroundColor: colors.secondary + "10", borderColor: colors.secondary + "30" }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Your Pantry Match</Text>
-            <View style={[styles.matchScore, { backgroundColor: colors.secondary }]}>
-              <Text style={styles.matchScoreText}>{matchScore}% match</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 0 }]}>Your Pantry Match</Text>
+              <View style={[styles.matchScore, { backgroundColor: appliedVariation ? colors.saffron : colors.secondary }]}>
+                <Text style={styles.matchScoreText}>{displayMatchScore}% match</Text>
+              </View>
             </View>
             <View style={styles.matchColumns}>
-              {pantryIngredients.length > 0 && (
+              {displayPantryIngredients.length > 0 && (
                 <View style={styles.matchColumn}>
                   <Text style={[styles.matchColumnHeader, { color: colors.secondary }]}>
-                    You Have ({pantryIngredients.length})
+                    You Have ({displayPantryIngredients.length})
                   </Text>
-                  {pantryIngredients.map((ing) => (
+                  {displayPantryIngredients.map((ing) => (
                     <View key={ing.name} style={styles.ingredientRow}>
                       <Feather name="check" size={14} color={colors.secondary} />
                       <Text style={[styles.ingredientText, { color: colors.foreground }]}>
@@ -442,12 +639,12 @@ export default function RecipeDetailScreen() {
                   ))}
                 </View>
               )}
-              {missingIngredients.length > 0 && (
+              {displayMissingIngredients.length > 0 && (
                 <View style={styles.matchColumn}>
                   <Text style={[styles.matchColumnHeader, { color: colors.saffron }]}>
-                    You Need ({missingIngredients.length})
+                    You Need ({displayMissingIngredients.length})
                   </Text>
-                  {missingIngredients.map((ing) => (
+                  {displayMissingIngredients.map((ing) => (
                     <View key={ing.name} style={styles.ingredientRow}>
                       <Feather name="shopping-cart" size={14} color={colors.saffron} />
                       <Text style={[styles.ingredientText, { color: colors.foreground }]}>
@@ -467,56 +664,81 @@ export default function RecipeDetailScreen() {
           {/* AI Variations */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>AI Variations</Text>
+
+            {/* Applied variation card with selectable additions */}
             {varNotes && appliedVariation && (
               <View style={[styles.varNoteBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-                  <Feather name="check-circle" size={14} color="#4CAF76" style={{ marginTop: 2 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.varNoteTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                  <Feather name="check-circle" size={15} color="#4CAF76" style={{ marginTop: 2 }} />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={[styles.varNoteTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
                       {appliedVariation} applied
                     </Text>
-                    <Text style={[styles.varNoteText, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>{varNotes}</Text>
+                    <Text style={[styles.varNoteText, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
+                      {varNotes}
+                    </Text>
+
+                    {/* Selectable additions */}
+                    {varAdditions.length > 0 && (
+                      <View style={{ marginTop: 10 }}>
+                        <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+                          Suggested additions — tap to include/remove:
+                        </Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 7 }}>
+                          {varAdditions.map((add) => {
+                            const isSelected = selectedAdditions.has(add.name);
+                            const inPantry = add.inPantry;
+                            const chipColor = inPantry ? "#4CAF76" : colors.saffron;
+                            return (
+                              <TouchableOpacity
+                                key={add.name}
+                                style={{
+                                  flexDirection: "row", alignItems: "center", gap: 5,
+                                  paddingHorizontal: 10, paddingVertical: 7, borderRadius: 100,
+                                  backgroundColor: isSelected ? chipColor + "20" : colors.muted,
+                                  borderWidth: 1,
+                                  borderColor: isSelected ? chipColor : colors.border,
+                                }}
+                                onPress={() => toggleAddition(add.name)}
+                              >
+                                <Feather
+                                  name={isSelected ? (inPantry ? "check" : "shopping-cart") : "plus"}
+                                  size={11}
+                                  color={isSelected ? chipColor : colors.mutedForeground}
+                                />
+                                <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: isSelected ? colors.foreground : colors.mutedForeground }}>
+                                  {add.name}
+                                </Text>
+                                {isSelected && add.amount ? (
+                                  <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: chipColor }}>
+                                    {add.amount}
+                                  </Text>
+                                ) : null}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                        {varAdditions.length > 0 && (
+                          <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 8 }}>
+                            🟢 green = in your pantry · 🟡 yellow = need to buy · pantry match above updates live
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                    {varAdditions.length === 0 && (
+                      <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 }}>
+                        ✅ Ingredients updated — see Pantry Match above for your shopping list
+                      </Text>
+                    )}
                   </View>
-                  <TouchableOpacity onPress={() => { setAppliedVariation(null); setVarIngredients(null); setVarSteps(null); setVarNotes(null); }}>
+                  <TouchableOpacity onPress={clearVariation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                     <Feather name="x" size={16} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </View>
-
-                {/* Pantry match for variation ingredients */}
-                {varIngredients && varIngredients.length > 0 && (() => {
-                  const have = varIngredients.filter((i) => i.inPantry);
-                  const need = varIngredients.filter((i) => !i.inPantry);
-                  return (
-                    <View style={{ marginTop: 12, gap: 8 }}>
-                      {have.length > 0 && (
-                        <View>
-                          <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#4CAF76", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                            ✅ You have ({have.length})
-                          </Text>
-                          {have.map((ing) => (
-                            <Text key={ing.name} style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.foreground, lineHeight: 18 }}>
-                              · {ing.name} — {ing.amount}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
-                      {need.length > 0 && (
-                        <View>
-                          <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.saffron, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                            🛒 Need to buy ({need.length})
-                          </Text>
-                          {need.map((ing) => (
-                            <Text key={ing.name} style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.foreground, lineHeight: 18 }}>
-                              · {ing.name} — {ing.amount}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  );
-                })()}
               </View>
             )}
+
+            {/* Variation chips */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -20 }} contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}>
               {AI_VARIATIONS.map((v) => {
                 const isApplied = appliedVariation === v.label;
@@ -541,7 +763,7 @@ export default function RecipeDetailScreen() {
                       <Feather name={isApplied ? "check" : v.icon} size={14} color={v.color} />
                     )}
                     <Text style={[styles.variationText, { color: v.color }]}>
-                      {isLoading ? "Working…" : v.label}
+                      {isLoading ? "Generating…" : v.label}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -549,11 +771,12 @@ export default function RecipeDetailScreen() {
             </ScrollView>
           </View>
 
-          {/* Cooking Steps */}
+          {/* Cooking Instructions */}
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Cooking Instructions</Text>
             {displaySteps.map((step) => {
               const done = completedSteps.includes(step.step);
+              const lines = step.instruction.split("\n").map((l) => l.trim()).filter(Boolean);
               return (
                 <TouchableOpacity
                   key={step.step}
@@ -570,10 +793,19 @@ export default function RecipeDetailScreen() {
                       <Text style={[styles.stepNumText, { color: colors.foreground }]}>{step.step}</Text>
                     )}
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.stepInstruction, { color: done ? colors.mutedForeground : colors.foreground, textDecorationLine: done ? "line-through" : "none" }]}>
-                      {step.instruction}
-                    </Text>
+                  <View style={{ flex: 1, gap: 5 }}>
+                    {lines.length > 1 ? lines.map((line, idx) => (
+                      <View key={idx} style={{ flexDirection: "row", gap: 7, alignItems: "flex-start" }}>
+                        <Text style={[styles.stepInstruction, { color: done ? colors.mutedForeground : colors.saffron, textDecorationLine: "none", marginTop: 1 }]}>•</Text>
+                        <Text style={[styles.stepInstruction, { flex: 1, color: done ? colors.mutedForeground : colors.foreground, textDecorationLine: done ? "line-through" : "none" }]}>
+                          {line.startsWith("•") ? line.slice(1).trim() : line}
+                        </Text>
+                      </View>
+                    )) : (
+                      <Text style={[styles.stepInstruction, { color: done ? colors.mutedForeground : colors.foreground, textDecorationLine: done ? "line-through" : "none" }]}>
+                        {step.instruction}
+                      </Text>
+                    )}
                     {step.timerMinutes && !done && (
                       <TouchableOpacity
                         style={[styles.timerBtn, { backgroundColor: colors.saffron + "15" }]}
@@ -589,18 +821,23 @@ export default function RecipeDetailScreen() {
             })}
           </View>
 
-          {/* Nutrition */}
+          {/* Nutrition — always per serving */}
           <View style={[styles.nutritionPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Nutrition</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 0 }]}>Nutrition</Text>
+              <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
+                per serving{appliedVariation ? ` · ${appliedVariation}` : ""}
+              </Text>
+            </View>
             <View style={styles.macroRow}>
               {[
-                { label: "Protein", value: recipe.nutrition.protein, unit: "g", color: "#5B8EF5" },
-                { label: "Carbs", value: recipe.nutrition.carbs, unit: "g", color: colors.saffron },
-                { label: "Fat", value: recipe.nutrition.fat, unit: "g", color: "#E84040" },
-                { label: "Fiber", value: recipe.nutrition.fiber, unit: "g", color: colors.secondary },
+                { label: "Protein", value: displayProtein, unit: "g",  color: "#5B8EF5" },
+                { label: "Carbs",   value: displayCarbs,   unit: "g",  color: colors.saffron },
+                { label: "Fat",     value: displayFat,     unit: "g",  color: "#E84040" },
+                { label: "Fiber",   value: displayFiber,   unit: "g",  color: colors.secondary },
               ].map((m) => (
                 <View key={m.label} style={styles.macroItem}>
-                  <Text style={[styles.macroValue, { color: m.color }]}>{Math.round(m.value * servingRatio)}{m.unit}</Text>
+                  <Text style={[styles.macroValue, { color: m.color }]}>{m.value}{m.unit}</Text>
                   <Text style={[styles.macroLabel, { color: colors.mutedForeground }]}>{m.label}</Text>
                 </View>
               ))}
@@ -608,7 +845,11 @@ export default function RecipeDetailScreen() {
             <View style={[styles.calorieRow, { backgroundColor: colors.muted }]}>
               <Feather name="zap" size={16} color={colors.saffron} />
               <Text style={[styles.calorieText, { color: colors.foreground }]}>
-                <Text style={{ fontWeight: "700", color: colors.saffron }}>{Math.round(recipe.calories * servingRatio)} kcal</Text> for {selectedServings} serving{selectedServings !== 1 ? "s" : ""}
+                <Text style={{ fontWeight: "700", color: colors.saffron }}>{displayCalories} kcal</Text>
+                {" per serving"}
+                {selectedServings > 1
+                  ? ` · ${displayCalories * selectedServings} kcal total for ${selectedServings}`
+                  : ""}
               </Text>
             </View>
           </View>
@@ -687,7 +928,6 @@ export default function RecipeDetailScreen() {
               </View>
             </View>
 
-            {/* Ingredient breakdown */}
             {(celebrationData.used.length > 0 || celebrationData.needStock.length > 0) && (
               <View style={{ width: "100%", gap: 10, marginBottom: 4 }}>
                 {celebrationData.used.length > 0 && (
@@ -773,20 +1013,27 @@ const styles = StyleSheet.create({
   tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
   tagText: { fontSize: 12 },
 
-  servingsRow: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 16,
+  servingsCard: {
+    borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16,
   },
   servingsLabel: { fontSize: 15 },
   servingsMealType: { fontSize: 12, marginTop: 2 },
-  servingsBtn: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  servingsCount: { fontSize: 22, minWidth: 28, textAlign: "center" },
+  servingChip: {
+    flexDirection: "row" as const,
+    width: 46, height: 46, borderRadius: 12, borderWidth: 1,
+    alignItems: "center" as const, justifyContent: "center" as const,
+  },
+  servingChipText: { fontSize: 16 },
+  customServingsInput: {
+    flex: 1, height: 44, borderRadius: 12, borderWidth: 1.5,
+    paddingHorizontal: 14, fontSize: 16, fontFamily: "Inter_500Medium",
+  },
 
   section: { marginBottom: 20 },
   sectionTitle: { fontSize: 18, fontFamily: "Fraunces_700Bold", marginBottom: 14, letterSpacing: -0.3 },
 
   matchPanel: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 20 },
-  matchScore: { alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, marginBottom: 14 },
+  matchScore: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100 },
   matchScoreText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
   matchColumns: { flexDirection: "row", gap: 16, marginBottom: 14 },
   matchColumn: { flex: 1, gap: 8 },
@@ -797,11 +1044,10 @@ const styles = StyleSheet.create({
   shoppingListBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
 
   varNoteBox: {
-    flexDirection: "row", alignItems: "flex-start", gap: 10,
-    padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12,
+    padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 12,
   },
-  varNoteTitle: { fontSize: 13, marginBottom: 2 },
-  varNoteText: { fontSize: 12, lineHeight: 17 },
+  varNoteTitle: { fontSize: 14 },
+  varNoteText: { fontSize: 13, lineHeight: 18 },
 
   variationChip: {
     flexDirection: "row", alignItems: "center", gap: 6,
@@ -810,7 +1056,7 @@ const styles = StyleSheet.create({
   variationText: { fontSize: 13, fontFamily: "Inter_500Medium" },
 
   stepCard: { flexDirection: "row", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 10 },
-  stepNum: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  stepNum: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 },
   stepNumText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   stepInstruction: { fontSize: 14, lineHeight: 21 },
   timerBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, alignSelf: "flex-start" },
@@ -822,7 +1068,7 @@ const styles = StyleSheet.create({
   macroValue: { fontSize: 18, fontFamily: "SpaceGrotesk_600SemiBold" },
   macroLabel: { fontSize: 11 },
   calorieRow: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10 },
-  calorieText: { fontSize: 14 },
+  calorieText: { fontSize: 14, flex: 1 },
 
   floatingTimerPill: {
     position: "absolute", alignSelf: "center",
@@ -843,7 +1089,10 @@ const styles = StyleSheet.create({
   stickyBarCookText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" },
 
   cookMode: { flex: 1 },
-  cookModeHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 12 },
+  cookModeHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, paddingBottom: 12,
+  },
   cookModeTitle: { color: "#F0EDE8", fontSize: 18, fontFamily: "Fraunces_700Bold" },
   cookModeProgress: { color: "#9E9E9E", fontSize: 14, fontFamily: "Inter_500Medium" },
   cookModeTimerPill: {
@@ -855,11 +1104,10 @@ const styles = StyleSheet.create({
   cookModeTimerPillLabel: { flex: 1, fontSize: 13 },
   cookModeTimerPillTime: { fontSize: 15, fontFamily: "SpaceGrotesk_600SemiBold" },
   cookModeContent: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
-  cookModeStepNum: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginBottom: 20 },
-  cookModeStepNumText: { color: "#fff", fontSize: 18, fontFamily: "SpaceGrotesk_600SemiBold" },
-  cookModeInstruction: { color: "#F0EDE8", fontSize: 22, lineHeight: 33, fontFamily: "Fraunces_700Bold", letterSpacing: -0.3 },
-  cookModeTimer: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 24, padding: 16, borderRadius: 14 },
-  cookModeTimerText: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
+  cookModeStepNum: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 24 },
+  cookModeStepNumText: { color: "#fff", fontSize: 20, fontFamily: "SpaceGrotesk_600SemiBold" },
+  cookModeBulletDot: { fontSize: 22, lineHeight: 30, flexShrink: 0 },
+  cookModeInstruction: { color: "#F0EDE8", fontSize: 20, lineHeight: 30, fontFamily: "Fraunces_700Bold", letterSpacing: -0.2 },
   cookModeFooter: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 12 },
   cookModeBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 16, borderRadius: 14 },
   cookModeNextBtn: { flex: 1, justifyContent: "center" },
