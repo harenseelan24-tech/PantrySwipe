@@ -14,6 +14,7 @@ runButton = "Project"
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
+integrations = ["revenuecat:1.0.0"]
 
 [postMerge]
 path = "scripts/post-merge.sh"
@@ -39,3 +40,13 @@ externalPort = 3000
 
 [userenv.shared]
 EXPO_PUBLIC_API_DOMAIN = "zip-repl-cactusussy24.replit.app"
+EXPO_PUBLIC_REVENUECAT_TEST_API_KEY = "test_SPEipgLGXFDmuBDxZfiqLkpcMNN"
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY = "appl_UcQPiJQwpBszXOuzqMqYFnsWXgb"
+EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY = "goog_fBhEmvFUkitDCNJitLELKqFNMDt"
+REVENUECAT_PROJECT_ID = "proj5d1a3e65"
+REVENUECAT_TEST_STORE_APP_ID = "app99f43b6459"
+REVENUECAT_APPLE_APP_STORE_APP_ID = "appa9b4d3afec"
+REVENUECAT_GOOGLE_PLAY_STORE_APP_ID = "app14176679fb"
+
+[nix]
+channel = "stable-25_05"
