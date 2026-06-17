@@ -1,0 +1,554 @@
+# PANTRYSWIPE — REALISTIC NUTRITION DATA & MEAL PLANNER FIX
+## Replace guessed macros with real, calculated nutrition from the USDA database
+
+> Paste into Replit Agent. This fixes two problems: (1) the Meal Planner's daily kcal/macro totals must start at 0 for every user until they actually log a meal — right now it appears to show invented numbers, and (2) recipe macros (calories/protein/carbs/fat) are currently unrealistic because they were estimated by AI guesswork on a whole dish at once instead of calculated from real per-ingredient nutrition data. This patch fixes both at the source.
+
+---
+
+## PART 1 — WHY THE MACROS ARE WRONG (read this first)
+
+Right now, recipe calories are coming from one of: TheMealDB (which provides **zero** nutrition data — it only has ingredients and instructions), Spoonacular's estimate, or a single Claude AI guess at "the calories of this whole dish." None of these is reliable on its own:
+
+- **TheMealDB has no macros at all** — anything you're seeing for those recipes was invented, not sourced
+- **A single AI guess at a whole dish's calories** is exactly how you end up with "pizza + linguine = 536 kcal" — the AI is pattern-matching to a plausible-sounding small number instead of actually adding up ingredients
+- **The fix:** calculate calories and macros bottom-up, ingredient by ingredient, using a real nutrition database, then sum the whole recipe. A linguine dish made with 100g pasta, olive oil, butter, and squash will correctly land around 550-750 kcal *per ingredient group alone* — let alone a full plate with multiple components.
+
+**The fix uses the USDA FoodData Central API** — free, no rate limits, U.S. government-maintained, covers 380,000+ foods including raw ingredients and branded products, public domain (no licensing fees, safe for commercial use).
+
+---
+
+## PART 2 — GET YOUR USDA API KEY
+
+```
+1. Go to https://fdc.nal.usda.gov/api-key-signup.html
+2. Fill in name + email — the key is issued instantly, no approval wait
+3. Copy the API key
+4. Add to Replit Secrets:
+   USDA_API_KEY=your_key_here
+```
+
+The free tier allows 3,600 requests/hour — more than enough for recipe seeding and live lookups.
+
+---
+
+## PART 3 — BUILD THE NUTRITION CALCULATION SERVICE
+
+Create `server/services/nutrition.ts`:
+
+```typescript
+import axios from 'axios';
+
+const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
+const USDA_KEY = process.env.USDA_API_KEY;
+
+// ─────────────────────────────────────────────
+// In-memory cache so we don't re-query USDA for 
+// the same ingredient repeatedly (e.g. "garlic" 
+// appears in hundreds of recipes)
+// ─────────────────────────────────────────────
+const nutritionCache = new Map<string, IngredientNutrition>();
+
+interface IngredientNutrition {
+  name: string;
+  caloriesPer100g: number;
+  proteinPer100g: number;
+  carbsPer100g: number;
+  fatPer100g: number;
+  fibrePer100g: number;
+  matchedFdcDescription: string; // what USDA actually matched, for debugging
+}
+
+// ─────────────────────────────────────────────
+// STEP 1: Search USDA for the best match to an 
+// ingredient name (e.g. "chicken breast" → finds 
+// "Chicken, broiler or fryers, breast, meat only, raw")
+// ─────────────────────────────────────────────
+export async function lookupIngredientNutrition(ingredientName: string): Promise<IngredientNutrition | null> {
+  const cacheKey = ingredientName.toLowerCase().trim();
+  if (nutritionCache.has(cacheKey)) {
+    return nutritionCache.get(cacheKey)!;
+  }
+
+  try {
+    // Clean the ingredient name — strip quantities, prep notes, etc.
+    // e.g. "2 cloves garlic, minced" → "garlic"
+    const cleanedName = cleanIngredientName(ingredientName);
+
+    const searchRes = await axios.get(`${USDA_BASE}/foods/search`, {
+      params: {
+        api_key: USDA_KEY,
+        query: cleanedName,
+        dataType: ['Foundation', 'SR Legacy'], // prioritise whole-food data over branded products
+        pageSize: 5,
+        sortBy: 'dataType.keyword',
+        sortOrder: 'asc',
+      }
+    });
+
+    const foods = searchRes.data.foods || [];
+    if (foods.length === 0) {
+      console.warn(`[Nutrition] No USDA match for: ${ingredientName}`);
+      return null;
+    }
+
+    // Take the best match (first result after sorting by data quality)
+    const bestMatch = foods[0];
+    const nutrients = bestMatch.foodNutrients || [];
+
+    const getNutrientValue = (nutrientName: string): number => {
+      const n = nutrients.find((n: any) =>
+        n.nutrientName?.toLowerCase().includes(nutrientName.toLowerCase())
+      );
+      return n?.value || 0;
+    };
+
+    const result: IngredientNutrition = {
+      name: ingredientName,
+      caloriesPer100g: getNutrientValue('Energy'),
+      proteinPer100g: getNutrientValue('Protein'),
+      carbsPer100g: getNutrientValue('Carbohydrate, by difference'),
+      fatPer100g: getNutrientValue('Total lipid (fat)'),
+      fibrePer100g: getNutrientValue('Fiber, total dietary'),
+      matchedFdcDescription: bestMatch.description,
+    };
+
+    nutritionCache.set(cacheKey, result);
+    return result;
+
+  } catch (err: any) {
+    console.error(`[Nutrition] USDA lookup failed for "${ingredientName}":`, err.message);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// STEP 2: Clean ingredient strings before searching
+// Strips quantities, units, and prep instructions that 
+// confuse the USDA search (which expects plain food names)
+// ─────────────────────────────────────────────
+function cleanIngredientName(raw: string): string {
+  let cleaned = raw.toLowerCase();
+
+  // Remove quantity + unit patterns (e.g. "2 cups", "500g", "1 tbsp")
+  cleaned = cleaned.replace(/^\d+[\d./\s]*\s*(g|kg|ml|l|cup|cups|tbsp|tsp|oz|lb|piece|pieces|clove|cloves|bunch|can|pack|slice|slices)\b/i, '');
+
+  // Remove common prep/descriptor words that don't affect base nutrition lookup
+  const noiseWords = ['fresh', 'chopped', 'diced', 'minced', 'sliced', 'grated',
+    'crushed', 'finely', 'roughly', 'large', 'small', 'medium', 'to taste',
+    'optional', 'for garnish', 'plus more'];
+  for (const word of noiseWords) {
+    cleaned = cleaned.replace(new RegExp(`\\b${word}\\b`, 'gi'), '');
+  }
+
+  // Remove anything in parentheses (often prep notes)
+  cleaned = cleaned.replace(/\(.*?\)/g, '');
+
+  return cleaned.replace(/[,]/g, '').trim();
+}
+
+// ─────────────────────────────────────────────
+// STEP 3: Convert a recipe's ingredient quantity 
+// (e.g. "200 g", "1 cup", "2 pieces") into grams, 
+// so we can scale the per-100g nutrition correctly
+// ─────────────────────────────────────────────
+const UNIT_TO_GRAMS: Record<string, number> = {
+  g: 1,
+  kg: 1000,
+  ml: 1, // approximation for water-density liquids; refined per-ingredient below
+  l: 1000,
+  oz: 28.35,
+  lb: 453.6,
+  cup: 240,      // approx for liquids; dry ingredients vary, see overrides below
+  tbsp: 15,
+  tsp: 5,
+  piece: 100,    // rough fallback — refined by ingredient-specific overrides below
+  pieces: 100,
+  clove: 5,      // garlic clove ≈ 5g
+  cloves: 5,
+  bunch: 60,
+  slice: 25,
+  slices: 25,
+};
+
+// Ingredient-specific gram overrides for "piece" units, since a 
+// "piece" of garlic vs a "piece" of chicken breast are wildly different
+const PIECE_OVERRIDES: Record<string, number> = {
+  egg: 50,
+  eggs: 50,
+  onion: 110,
+  garlic: 5,
+  tomato: 120,
+  potato: 170,
+  carrot: 60,
+  'chicken breast': 175,
+  lemon: 60,
+  lime: 45,
+  banana: 120,
+};
+
+function convertToGrams(quantity: number, unit: string, ingredientName: string): number {
+  const cleanedUnit = unit.toLowerCase().trim();
+  const cleanedName = ingredientName.toLowerCase();
+
+  // Check for ingredient-specific piece override first
+  if (cleanedUnit.includes('piece') || cleanedUnit === '') {
+    for (const [key, grams] of Object.entries(PIECE_OVERRIDES)) {
+      if (cleanedName.includes(key)) return quantity * grams;
+    }
+  }
+
+  const gramsPerUnit = UNIT_TO_GRAMS[cleanedUnit] || 100; // fallback assumption
+  return quantity * gramsPerUnit;
+}
+
+// ─────────────────────────────────────────────
+// STEP 4: MAIN FUNCTION — calculate full recipe macros
+// by summing every ingredient's contribution
+// ─────────────────────────────────────────────
+export interface RecipeIngredientInput {
+  name: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface CalculatedMacros {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fibre: number;
+  perIngredientBreakdown: Array<{
+    name: string;
+    grams: number;
+    calories: number;
+    matched: string | null;
+  }>;
+  confidence: 'high' | 'medium' | 'low'; // based on how many ingredients matched USDA
+}
+
+export async function calculateRecipeMacros(
+  ingredients: RecipeIngredientInput[],
+  servings: number
+): Promise<CalculatedMacros> {
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+  let totalFibre = 0;
+  let matchedCount = 0;
+  const breakdown: CalculatedMacros['perIngredientBreakdown'] = [];
+
+  for (const ing of ingredients) {
+    const nutrition = await lookupIngredientNutrition(ing.name);
+    const grams = convertToGrams(ing.quantity, ing.unit, ing.name);
+
+    if (nutrition) {
+      matchedCount++;
+      const factor = grams / 100; // USDA data is per 100g
+      const calContribution = nutrition.caloriesPer100g * factor;
+
+      totalCalories += calContribution;
+      totalProtein += nutrition.proteinPer100g * factor;
+      totalCarbs += nutrition.carbsPer100g * factor;
+      totalFat += nutrition.fatPer100g * factor;
+      totalFibre += nutrition.fibrePer100g * factor;
+
+      breakdown.push({
+        name: ing.name,
+        grams,
+        calories: Math.round(calContribution),
+        matched: nutrition.matchedFdcDescription,
+      });
+    } else {
+      breakdown.push({ name: ing.name, grams, calories: 0, matched: null });
+    }
+  }
+
+  const matchRate = ingredients.length > 0 ? matchedCount / ingredients.length : 0;
+  const confidence = matchRate >= 0.8 ? 'high' : matchRate >= 0.5 ? 'medium' : 'low';
+
+  // Divide by servings to get PER-SERVING macros (this is the #1 place 
+  // bugs like "536 kcal for a full pizza+pasta meal" come from — make 
+  // sure you're dividing total recipe macros by servings, not displaying 
+  // the whole-pot total as if it were one serving, AND not dividing an 
+  // already-per-serving number again)
+  return {
+    calories: Math.round(totalCalories / servings),
+    protein: Math.round(totalProtein / servings),
+    carbs: Math.round(totalCarbs / servings),
+    fat: Math.round(totalFat / servings),
+    fibre: Math.round(totalFibre / servings),
+    perIngredientBreakdown: breakdown,
+    confidence,
+  };
+}
+
+// ─────────────────────────────────────────────
+// STEP 5: Sanity-check function — flags results 
+// that are clearly wrong so they can be reviewed 
+// instead of silently saved
+// ─────────────────────────────────────────────
+export function sanityCheckMacros(macros: CalculatedMacros, dishName: string): string[] {
+  const warnings: string[] = [];
+
+  if (macros.calories < 80) {
+    warnings.push(`${dishName}: ${macros.calories} kcal seems too low for a full meal — check ingredient matching`);
+  }
+  if (macros.calories > 2000) {
+    warnings.push(`${dishName}: ${macros.calories} kcal seems too high for a single serving — check serving count`);
+  }
+  if (macros.confidence === 'low') {
+    warnings.push(`${dishName}: Low confidence — fewer than half the ingredients matched USDA data`);
+  }
+  // Calories should roughly match: protein*4 + carbs*4 + fat*9 (within ~15% tolerance)
+  const calculatedFromMacros = (macros.protein * 4) + (macros.carbs * 4) + (macros.fat * 9);
+  const diff = Math.abs(calculatedFromMacros - macros.calories) / macros.calories;
+  if (diff > 0.25) {
+    warnings.push(`${dishName}: Macro math doesn't add up — calories (${macros.calories}) vs protein+carbs+fat calculation (${Math.round(calculatedFromMacros)}) differ by ${Math.round(diff * 100)}%`);
+  }
+
+  return warnings;
+}
+```
+
+---
+
+## PART 4 — UPDATE THE RECIPE SEEDER TO USE THIS
+
+In your existing `server/scripts/seedRecipes.ts`, **replace** the old `estimateMacros()` function (the one that asked Claude to guess calories for a whole dish) with a call to the new calculator:
+
+```typescript
+import { calculateRecipeMacros, sanityCheckMacros } from '../services/nutrition';
+
+// REPLACE the old estimateMacros() Claude-guessing function with this:
+async function getRealMacros(recipeName: string, ingredientsJson: RecipeIngredientInput[], servings: number) {
+  const macros = await calculateRecipeMacros(ingredientsJson, servings);
+  const warnings = sanityCheckMacros(macros, recipeName);
+
+  if (warnings.length > 0) {
+    console.warn(`⚠️  [${recipeName}]`, warnings.join(' | '));
+  }
+
+  return macros;
+}
+
+// Then in fetchFromTheMealDB(), fetchFromSpoonacular(), and generateWithClaude(),
+// replace the macro-fetching step with:
+const macros = await getRealMacros(m.strMeal, ingredientsJson, 2); // or recipe.servings
+```
+
+**Important:** Re-run the seeder after this change to recalculate macros for all existing recipes:
+
+```sql
+-- First, clear the old (unreliable) macro data so it gets recalculated
+UPDATE recipes SET macros_json = NULL, calories = NULL;
+```
+
+```bash
+npm run seed:recipes -- --recalculate-macros-only
+```
+
+(Add a flag to your seeder script that, when passed, skips re-fetching from TheMealDB/Spoonacular and only re-runs the macro calculation step on existing rows — this avoids hitting external APIs again unnecessarily.)
+
+---
+
+## PART 5 — FIX THE MEAL PLANNER TO START AT ZERO
+
+This is the second half of your request — a brand new user must see **0 kcal, 0g protein, 0g carbs, 0g fat** until they log something. If you're currently seeing non-zero numbers for a fresh account, the bug is one of these:
+
+```
+CHECK 1 — Is meal_log actually empty for this user?
+  Run: SELECT * FROM meal_log WHERE user_id = '<the test user id>';
+  If rows exist that the user never logged, those are leftover seed/demo 
+  data — delete them:
+  DELETE FROM meal_log WHERE user_id = '<test user id>';
+
+CHECK 2 — Is the Planner screen calculating totals correctly?
+  The daily total MUST be calculated as:
+    SUM(meal_log.calories) WHERE user_id = X AND date = today
+  NOT a hardcoded placeholder number, and NOT pulling from a 
+  recipe's macros without an actual logged entry tying it to that user 
+  and that date.
+
+CHECK 3 — Is there a default/fallback value bug in the frontend?
+  Search the Planner component for any line like:
+    const dailyCalories = data?.calories || 1847;  ← BAD, hardcoded fallback
+  Replace any such fallback with:
+    const dailyCalories = data?.calories ?? 0;     ← correct, defaults to 0
+  
+  This is a common bug: using `|| someNumber` as a fallback for "no data 
+  yet" accidentally activates whenever the real value is 0 (since `0 || 
+  1847` evaluates to 1847 in JavaScript). Use `??` (nullish coalescing) 
+  instead of `||` everywhere numeric stats are displayed, so 0 is treated 
+  as a valid value, not "missing."
+```
+
+### Updated Planner API endpoint:
+
+```typescript
+// GET /api/meal-log/daily-summary?date=YYYY-MM-DD
+router.get('/daily-summary', async (req, res) => {
+  const user = req.user;
+  const date = req.query.date as string || new Date().toISOString().split('T')[0];
+
+  const entries = await db.select().from(mealLog)
+    .where(and(
+      eq(mealLog.user_id, user.id),
+      eq(mealLog.date, date)
+    ));
+
+  // If no entries, return all zeros explicitly — never a placeholder/demo number
+  if (entries.length === 0) {
+    return res.json({
+      date,
+      total_calories: 0,
+      total_protein: 0,
+      total_carbs: 0,
+      total_fat: 0,
+      total_fibre: 0,
+      meals_logged: 0,
+      estimated_cost: 0,
+      entries: [],
+    });
+  }
+
+  const totals = entries.reduce((acc, entry) => {
+    const macros = entry.macros_json as any;
+    return {
+      total_calories: acc.total_calories + (macros?.calories || 0),
+      total_protein:  acc.total_protein  + (macros?.protein  || 0),
+      total_carbs:    acc.total_carbs    + (macros?.carbs    || 0),
+      total_fat:      acc.total_fat      + (macros?.fat      || 0),
+      total_fibre:    acc.total_fibre    + (macros?.fibre    || 0),
+      estimated_cost: acc.estimated_cost + (entry.estimated_cost || 0),
+    };
+  }, { total_calories: 0, total_protein: 0, total_carbs: 0, total_fat: 0, total_fibre: 0, estimated_cost: 0 });
+
+  res.json({
+    date,
+    ...totals,
+    meals_logged: entries.length,
+    entries,
+  });
+});
+```
+
+### Frontend Planner display fix:
+
+```typescript
+// In the Planner/Day view component:
+const { data: dailySummary, isLoading } = useQuery(['daily-summary', selectedDate], () =>
+  fetch(`/api/meal-log/daily-summary?date=${selectedDate}`).then(r => r.json())
+);
+
+// CORRECT — explicit zero handling, no misleading fallback:
+const displayCalories = isLoading ? null : (dailySummary?.total_calories ?? 0);
+
+// When meals_logged === 0, show an empty state instead of bare "0 kcal" 
+// so it's clear this is "nothing logged yet" rather than "you ate zero calories":
+{dailySummary?.meals_logged === 0 ? (
+  <EmptyState
+    icon="📅"
+    title="Nothing logged today"
+    subtitle="Log your first meal to start tracking"
+    ctaText="Log a Meal"
+    onCta={() => openMealLogSheet()}
+  />
+) : (
+  <NutritionRings
+    calories={dailySummary.total_calories}
+    protein={dailySummary.total_protein}
+    carbs={dailySummary.total_carbs}
+    fat={dailySummary.total_fat}
+    goalCalories={user.daily_calorie_goal} // also starts NULL until onboarding/settings sets it
+  />
+)}
+```
+
+---
+
+## PART 6 — APPLY REAL MACROS EVERYWHERE ELSE IN THE APP
+
+Once `calculateRecipeMacros()` exists, use it consistently in every place macros appear, not just the seeder:
+
+```
+☐ Recipe Detail screen — macro circular chart pulls from recipes.macros_json 
+   (already calculated at seed time, served as-is — no live recalculation 
+   needed here since it's stored)
+
+☐ Swipe card calorie badge — same: read from recipes.macros_json.calories, 
+   already correct after re-seeding
+
+☐ AI Chef recipe suggestions — when Claude generates a NEW recipe on the 
+   fly (not from the seeded library), the response must still run through 
+   calculateRecipeMacros() before being shown to the user or saved, rather 
+   than trusting whatever calorie number Claude includes in its own text. 
+   Update server/routes/recipes.ts → POST /ai-chef:
+
+     // After getting Claude's response with a new recipe:
+     if (claudeGeneratedRecipe) {
+       const realMacros = await calculateRecipeMacros(
+         claudeGeneratedRecipe.ingredients,
+         claudeGeneratedRecipe.servings
+       );
+       claudeGeneratedRecipe.macros = realMacros; // overwrite Claude's guess
+     }
+
+☐ Macro adjustment slider (Recipe Detail — "increase protein" feature) — 
+   when the user drags the protein slider and ingredients get scaled, 
+   recalculate macros with calculateRecipeMacros() on the NEW ingredient 
+   quantities rather than asking Claude to guess the new totals
+
+☐ Barcode scanner pantry items — these already get real macros from the 
+   Open Food Facts API per-product, which is fine and doesn't need 
+   USDA lookup (Open Food Facts already provides accurate per-100g/
+   per-serving data for branded products)
+
+☐ Shopping list cost/calorie summaries — derive from the same stored 
+   recipes.macros_json, no separate calculation needed
+```
+
+---
+
+## PART 7 — VALIDATION CHECKLIST
+
+```
+After implementing, verify with a real test:
+
+☐ Pick 3 known recipes (e.g. a simple chicken stir fry, a pasta dish, 
+   a salad) and manually sanity-check their new calculated calories 
+   against what a quick Google search says for similar home-cooked 
+   portions. They should be in a believable range (a pasta dish with 
+   cheese/meat: roughly 500-800 kcal per serving, not 100 or 2000).
+
+☐ Create a brand new test user account, go straight to the Planner 
+   without logging anything → confirm it shows 0 kcal / 0g protein / 
+   0g carbs / 0g fat and an empty state, NOT any placeholder number.
+
+☐ Log one real meal → confirm the daily total updates to match exactly 
+   that one meal's macros, nothing extra added in.
+
+☐ Check the seeding console output for the sanity-check warnings — 
+   any recipe that prints a warning should be manually spot-checked, 
+   since it means USDA couldn't confidently match its ingredients 
+   (common culprits: oddly-named ethnic ingredients, brand names, 
+   vague terms like "sauce" or "seasoning mix")
+
+☐ For recipes with low-confidence matches, consider adding a manual 
+   override table (ingredient_name_overrides) where you map tricky 
+   ingredient names to specific USDA FDC IDs once, rather than relying 
+   on fuzzy search every time
+```
+
+---
+
+## SUMMARY
+
+| Before | After |
+|---|---|
+| Calories guessed by AI for a whole dish at once | Calculated bottom-up from real USDA per-ingredient data |
+| TheMealDB recipes had invented/missing macros | All recipes get calculated macros via USDA lookup |
+| New user's Planner showed non-zero kcal | Planner explicitly returns 0 until a meal is actually logged |
+| `||` fallback bug treated 0 as "missing" | Switched to `??` so 0 is a valid, correctly-displayed value |
+| No sanity checking on macro values | Automatic warnings flag implausible calorie/macro results |
+| AI Chef's on-the-fly recipes had guessed macros | AI Chef recipes also run through the real USDA calculator before being shown |
