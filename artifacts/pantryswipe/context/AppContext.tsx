@@ -236,9 +236,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       params.set("limit", "60");
 
+      const recipeController = new AbortController();
+      const recipeTimer = setTimeout(() => recipeController.abort(), 30000);
       const res = await fetch(`${API_BASE}/recipes/swipe?${params.toString()}`, {
-        signal: AbortSignal.timeout(30000),
+        signal: recipeController.signal,
       });
+      clearTimeout(recipeTimer);
 
       if (!res.ok) return;
       const data: ApiRecipe[] = await res.json();

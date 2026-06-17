@@ -91,8 +91,8 @@ export default function AIChefScreen() {
             name: userProfile.name,
           },
         }),
-        signal: AbortSignal.timeout(20000),
       });
+      // (timeout handled by AbortController below if needed)
 
       const data = await res.json().catch(() => ({ response: null }));
       const aiText = data.response as string | null;

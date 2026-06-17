@@ -65,18 +65,26 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
 
     let items: DetectedItem[] | null = null;
     try {
-      const res = await fetch(`${API_BASE}/vision/scan-receipt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64 }),
-        signal: AbortSignal.timeout(45000),
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 45000);
+      let res: Response;
+      try {
+        res = await fetch(`${API_BASE}/vision/scan-receipt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64 }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
       if (res.status === 429) { setWebPhase("error-ratelimit"); return; }
       if (!res.ok) { setWebPhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
       items = data.items ?? [];
-    } catch {
-      setWebPhase("error-offline");
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      setWebPhase(name === "AbortError" ? "error-unclear" : "error-offline");
       return;
     }
 
@@ -148,13 +156,16 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
     const base64 = result.assets[0].base64;
     setNativePhase("reading");
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
     try {
       const res = await fetch(`${API_BASE}/vision/scan-receipt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64 }),
-        signal: AbortSignal.timeout(60000),
+        signal: controller.signal,
       });
+      clearTimeout(timer);
       if (res.status === 429) { setNativePhase("error-ratelimit"); return; }
       if (!res.ok) { setNativePhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
@@ -169,6 +180,7 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
       }));
       onDone(enriched);
     } catch (err: unknown) {
+      clearTimeout(timer);
       const name = err instanceof Error ? err.name : "";
       setNativePhase(name === "AbortError" ? "error-unclear" : "error-offline");
     }
@@ -192,13 +204,16 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
     const base64 = result.assets[0].base64;
     setNativePhase("reading");
 
+    const controller2 = new AbortController();
+    const timer2 = setTimeout(() => controller2.abort(), 60000);
     try {
       const res = await fetch(`${API_BASE}/vision/scan-receipt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64 }),
-        signal: AbortSignal.timeout(60000),
+        signal: controller2.signal,
       });
+      clearTimeout(timer2);
       if (res.status === 429) { setNativePhase("error-ratelimit"); return; }
       if (!res.ok) { setNativePhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
@@ -213,6 +228,7 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
       }));
       onDone(enriched);
     } catch (err: unknown) {
+      clearTimeout(timer2);
       const name = err instanceof Error ? err.name : "";
       setNativePhase(name === "AbortError" ? "error-unclear" : "error-offline");
     }
