@@ -185,7 +185,9 @@ export default function HomeScreen() {
       if (!val) {
         setTimeout(() => {
           setShowTutorial(true);
-          Animated.timing(tutOverlayOpacity, { toValue: 1, duration: 350, useNativeDriver: true }).start(() => {
+          // useNativeDriver: false required on web — native driver doesn't call
+          // .start() callbacks on web, leaving the overlay stuck and blocking swipes.
+          Animated.timing(tutOverlayOpacity, { toValue: 1, duration: 350, useNativeDriver: false }).start(() => {
             runTutorialStep(0);
           });
         }, 600);
@@ -196,7 +198,7 @@ export default function HomeScreen() {
   const runTutorialStep = (step: number) => {
     if (step >= TUTORIAL_STEPS.length) {
       // All steps done → fade out
-      Animated.timing(tutOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
+      Animated.timing(tutOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: false }).start(() => {
         setShowTutorial(false);
         AsyncStorage.setItem("swipeTutorialSeen", "1");
       });
@@ -213,14 +215,14 @@ export default function HomeScreen() {
     tutLabelOpacity.setValue(0);
 
     // Fade in label
-    Animated.timing(tutLabelOpacity, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    Animated.timing(tutLabelOpacity, { toValue: 1, duration: 280, useNativeDriver: false }).start();
 
     // Pause then animate card out
     setTimeout(() => {
       Animated.parallel([
-        Animated.timing(tutCardX, { toValue: targetX, duration: 520, useNativeDriver: true }),
-        Animated.timing(tutCardY, { toValue: targetY, duration: 520, useNativeDriver: true }),
-        Animated.timing(tutStampOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.timing(tutCardX, { toValue: targetX, duration: 520, useNativeDriver: false }),
+        Animated.timing(tutCardY, { toValue: targetY, duration: 520, useNativeDriver: false }),
+        Animated.timing(tutStampOpacity, { toValue: 1, duration: 200, useNativeDriver: false }),
       ]).start(() => {
         // Pause then go to next step
         setTimeout(() => {
@@ -232,7 +234,7 @@ export default function HomeScreen() {
 
   const dismissTutorial = async () => {
     await AsyncStorage.setItem("swipeTutorialSeen", "1");
-    Animated.timing(tutOverlayOpacity, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => {
+    Animated.timing(tutOverlayOpacity, { toValue: 0, duration: 250, useNativeDriver: false }).start(() => {
       setShowTutorial(false);
     });
   };
