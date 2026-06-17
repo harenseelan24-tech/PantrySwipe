@@ -10,8 +10,8 @@ import { useCameraStream } from "@/hooks/useCameraStream";
 import type { DetectedItem } from "@/types/scanning";
 import { CATEGORY_EMOJIS } from "@/types/scanning";
 
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
+const API_BASE = Platform.OS !== "web"
+  ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}/api`
   : "/api";
 
 interface Props {

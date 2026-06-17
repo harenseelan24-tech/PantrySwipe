@@ -34,3 +34,8 @@ externalPort = 3001
 [[ports]]
 localPort = 25287
 externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_API_DOMAIN = "zip-repl-cactusussy24.replit.app"

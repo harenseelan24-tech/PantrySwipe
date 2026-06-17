@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { INITIAL_PANTRY, MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
 
@@ -25,8 +26,8 @@ function parseIngredientAmount(str: string): { value: number; unit: string } | n
   return { value: parseFloat(m[1]), unit: normalizeUnit(m[2] || "") };
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
+const API_BASE = Platform.OS !== "web"
+  ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}/api`
   : "/api";
 
 // ─── API recipe shape returned by the server ──────────────────────────────────

@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useApp } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
-import ScanFridgeModal from "@/components/ScanFridgeModal";
 import ScanReceiptModal from "@/components/ScanReceiptModal";
 import ConfirmationEditScreen from "@/components/ConfirmationEditScreen";
 import type { DetectedItem, ScanSource } from "@/types/scanning";
@@ -207,7 +206,6 @@ export default function OnboardingScreen() {
   const [cuisineError, setCuisineError] = useState(false);
 
   // ── Camera / Pantry-flow state ──────────────────────────────────────────────
-  const [showScanFridge, setShowScanFridge] = useState(false);
   const [showScanReceipt, setShowScanReceipt] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmItems, setConfirmItems] = useState<DetectedItem[]>([]);
@@ -221,20 +219,12 @@ export default function OnboardingScreen() {
   const [showSkipConfirm, setShowSkipConfirm] = useState(false);
 
   const handlePantryOption = useCallback((id: string) => {
-    if (id === "scan") { setShowScanFridge(true); }
-    else if (id === "receipt") { setShowScanReceipt(true); }
+    if (id === "scan" || id === "receipt") { setShowScanReceipt(true); }
     else if (id === "type") {
       setManualAdded([]); setManualName(""); setManualQty("1"); setShowManualEntry(true);
     } else if (id === "skip") {
       setShowSkipConfirm(true);
     }
-  }, []);
-
-  const handleScanFridgeDone = useCallback((items: DetectedItem[]) => {
-    setShowScanFridge(false);
-    setConfirmItems(items);
-    setConfirmSource("fridge-scan");
-    setShowConfirm(true);
   }, []);
 
   const handleScanReceiptDone = useCallback((items: DetectedItem[]) => {
@@ -640,8 +630,7 @@ export default function OnboardingScreen() {
           <Text style={styles.stepSub}>The more you add, the better your recipe suggestions.</Text>
           <View style={styles.pantryList}>
             {[
-              { id: "scan", emoji: "🤳", bg: OB.blueLight, title: "Scan Fridge / Pantry", desc: "Point your camera at your food — AI will detect it instantly" },
-              { id: "receipt", emoji: "🧾", bg: "#E6FAF5", title: "Scan Receipt", desc: "Take a photo of your grocery receipt — we'll read it for you" },
+              { id: "scan", emoji: "🧾", bg: OB.blueLight, title: "Scan a Receipt", desc: "Take a photo of your grocery receipt — AI extracts all items instantly" },
               { id: "type", emoji: "✏️", bg: OB.amberLight, title: "Type It In", desc: "Add ingredients manually at your own pace" },
               { id: "skip", emoji: "⏭️", bg: "#F1F5F9", title: "I'll Add Later", desc: "Skip for now — add from the Pantry tab anytime" },
             ].map((opt) => (
@@ -784,11 +773,6 @@ export default function OnboardingScreen() {
       </Modal>
 
       {/* ── REAL AI SCAN MODALS ── */}
-      <ScanFridgeModal
-        visible={showScanFridge}
-        onClose={() => setShowScanFridge(false)}
-        onDone={handleScanFridgeDone}
-      />
       <ScanReceiptModal
         visible={showScanReceipt}
         onClose={() => setShowScanReceipt(false)}

@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 export interface BarcodeProduct {
   id?: number;
   barcode: string;
@@ -8,8 +10,8 @@ export interface BarcodeProduct {
   source: "db" | "openfoodfacts" | "upcitemdb";
 }
 
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+const API_BASE = Platform.OS !== "web"
+  ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}`
   : "";
 
 export async function lookupBarcode(barcode: string): Promise<BarcodeProduct | null> {

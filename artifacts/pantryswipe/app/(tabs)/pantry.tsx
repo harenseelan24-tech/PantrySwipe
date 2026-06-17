@@ -23,6 +23,8 @@ import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { PantryItem, Recipe } from "@/data/mockData";
 import { lookupBarcode, type BarcodeProduct } from "@/services/barcodeService";
+import ScanReceiptModal from "@/components/ScanReceiptModal";
+import type { DetectedItem } from "@/types/scanning";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -101,6 +103,8 @@ export default function PantryScreen() {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [search, setSearch] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showExpiryModal, setShowExpiryModal] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
@@ -271,6 +275,22 @@ export default function PantryScreen() {
     resetBarcodeModal();
   };
 
+  const handleReceiptScanDone = (items: DetectedItem[]) => {
+    items.forEach((item) => {
+      addToPantry({
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        category: mapToAppCategory(item.category),
+        status: "Fresh",
+        emoji: item.emoji || categoryToEmoji(mapToAppCategory(item.category)),
+      });
+    });
+    setShowReceiptModal(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
   const handleAddManual = () => {
     if (!manualName.trim()) return;
     const newItem: PantryItem = {
@@ -315,7 +335,7 @@ export default function PantryScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.addBtn, { backgroundColor: colors.primary, shadowColor: colors.primary }]}
-              onPress={() => setShowAddModal(true)}
+              onPress={() => setShowAddChoiceModal(true)}
             >
               <Feather name="plus" size={20} color="#fff" />
             </TouchableOpacity>
@@ -993,6 +1013,54 @@ export default function PantryScreen() {
           )}
         </View>
       </Modal>
+
+      {/* ── ADD CHOICE SHEET ── */}
+      <Modal visible={showAddChoiceModal} animationType="slide" transparent onRequestClose={() => setShowAddChoiceModal(false)}>
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowAddChoiceModal(false)} activeOpacity={1} />
+          <View style={[styles.sheet, { backgroundColor: colors.background, paddingBottom: 48, paddingHorizontal: 20, gap: 12 }]}>
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.sheetTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold", paddingBottom: 8 }]}>Add to Pantry</Text>
+
+            <TouchableOpacity
+              style={{ flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+              onPress={() => { setShowAddChoiceModal(false); setShowReceiptModal(true); }}
+              activeOpacity={0.8}
+            >
+              <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: colors.primary + "22", alignItems: "center", justifyContent: "center" }}>
+                <Feather name="camera" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Scan Receipt</Text>
+                <Text style={{ fontSize: 13, color: colors.textMuted, fontFamily: "Inter_400Regular", marginTop: 2 }}>AI reads your grocery receipt automatically</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{ flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+              onPress={() => { setShowAddChoiceModal(false); setShowAddModal(true); }}
+              activeOpacity={0.8}
+            >
+              <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: colors.saveBlue + "22", alignItems: "center", justifyContent: "center" }}>
+                <Feather name="edit-2" size={20} color={colors.saveBlue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Add Manually</Text>
+                <Text style={{ fontSize: 13, color: colors.textMuted, fontFamily: "Inter_400Regular", marginTop: 2 }}>Type in item name, quantity and category</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── RECEIPT SCANNER ── */}
+      <ScanReceiptModal
+        visible={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        onDone={handleReceiptScanDone}
+      />
     </View>
   );
 }

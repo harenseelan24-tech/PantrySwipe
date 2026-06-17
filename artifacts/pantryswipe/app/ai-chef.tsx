@@ -45,8 +45,8 @@ export default function AIChefScreen() {
   const { userProfile, pantryItems } = useApp();
   const conversationRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
 
-  const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-    ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
+  const API_BASE = Platform.OS !== "web"
+    ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}/api`
     : "/api";
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
