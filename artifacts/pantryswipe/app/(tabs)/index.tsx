@@ -138,6 +138,8 @@ export default function HomeScreen() {
   const [showServingsModal, setShowServingsModal] = useState(false);
   const [pendingSwipeRecipe, setPendingSwipeRecipe] = useState<Recipe | null>(null);
   const [selectedServings, setSelectedServings] = useState(2);
+  const [customServingMode, setCustomServingMode] = useState(false);
+  const [customServingInput, setCustomServingInput] = useState("");
 
   // ── Tutorial state ──
   const [showTutorial, setShowTutorial] = useState(false);
@@ -684,28 +686,56 @@ export default function HomeScreen() {
               {pendingSwipeRecipe?.title}
             </Text>
             <View style={styles.servingsBtnRow}>
-              {[1, 2, 3, 4, 5, 6, 8].map((n) => (
-                <TouchableOpacity
-                  key={n}
-                  style={[
-                    styles.servingsNumBtn,
-                    {
-                      backgroundColor: selectedServings === n ? colors.primary : colors.card,
-                      borderColor: selectedServings === n ? colors.primary : colors.border,
-                    },
-                  ]}
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedServings(n); }}
-                >
-                  <Text style={[styles.servingsNumText, { color: selectedServings === n ? "#fff" : colors.foreground, fontFamily: selectedServings === n ? "Inter_700Bold" : "Inter_500Medium" }]}>
-                    {n}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {[1, 2, 3, 4, 5, 6, 8].map((n) => {
+                const active = selectedServings === n && !customServingMode;
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    style={[styles.servingsNumBtn, {
+                      backgroundColor: active ? colors.primary : colors.card,
+                      borderColor: active ? colors.primary : colors.border,
+                    }]}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedServings(n); setCustomServingMode(false); }}
+                  >
+                    <Text style={[styles.servingsNumText, { color: active ? "#fff" : colors.foreground, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium" }]}>
+                      {n}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[styles.servingsNumBtn, {
+                  backgroundColor: customServingMode ? colors.primary : colors.card,
+                  borderColor: customServingMode ? colors.primary : colors.border,
+                  flexDirection: "row", width: "auto" as any, paddingHorizontal: 14, gap: 5,
+                }]}
+                onPress={() => { setCustomServingMode(true); setCustomServingInput(String(selectedServings)); }}
+              >
+                <Feather name="edit-2" size={14} color={customServingMode ? "#fff" : colors.textMuted} />
+                <Text style={[styles.servingsNumText, { color: customServingMode ? "#fff" : colors.textMuted }]}>
+                  {customServingMode ? selectedServings : "Custom"}
+                </Text>
+              </TouchableOpacity>
             </View>
+            {customServingMode && (
+              <TextInput
+                style={[styles.servingsCustomInput, { backgroundColor: colors.card, borderColor: colors.primary, color: colors.foreground }]}
+                value={customServingInput}
+                onChangeText={setCustomServingInput}
+                keyboardType="number-pad"
+                placeholder="Enter number of servings…"
+                placeholderTextColor={colors.textMuted}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => { const n = parseInt(customServingInput, 10); if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99)); }}
+                onBlur={() => { const n = parseInt(customServingInput, 10); if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99)); }}
+              />
+            )}
             <TouchableOpacity
               style={[styles.servingsCookBtn, { backgroundColor: colors.primary }]}
               onPress={() => {
                 setShowServingsModal(false);
+                setCustomServingMode(false);
                 if (pendingSwipeRecipe) {
                   router.push(`/recipe/${pendingSwipeRecipe.id}?servings=${selectedServings}&mealType=${activeMealType ?? "Dinner"}`);
                 }
@@ -803,6 +833,10 @@ const styles = StyleSheet.create({
   servingsNumText: { fontSize: 20 },
   servingsCookBtn: { paddingVertical: 16, borderRadius: 14, alignItems: "center", marginBottom: 4 },
   servingsCookBtnText: { fontSize: 16, color: "#fff" },
+  servingsCustomInput: {
+    height: 50, borderRadius: 14, borderWidth: 1.5,
+    paddingHorizontal: 16, fontSize: 17, fontFamily: "Inter_500Medium", marginBottom: 12,
+  },
 
   // ── Expiry banner ──
   expiryBannerWrap: {

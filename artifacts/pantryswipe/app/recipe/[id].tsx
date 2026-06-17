@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import {
   Animated,
   Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -73,6 +74,7 @@ export default function RecipeDetailScreen() {
   const [selectedMealType, setSelectedMealType] = useState<MealType>("Dinner");
   const [customServingsMode, setCustomServingsMode] = useState(false);
   const [customServingsInput, setCustomServingsInput] = useState("");
+  const [showServingsModal, setShowServingsModal] = useState(false);
 
   useEffect(() => {
     if (recipe) {
@@ -318,6 +320,18 @@ export default function RecipeDetailScreen() {
     );
   };
 
+  // ── Split instruction into bullet-point lines ────────────────────────────────
+  const splitToPoints = (text: string): string[] => {
+    const byNewline = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (byNewline.length > 1) return byNewline;
+    // For single-paragraph AI-generated steps: split at ". " before uppercase
+    const bySentence = text.split(/\.\s+(?=[A-Z])/).filter(Boolean);
+    if (bySentence.length > 1) {
+      return bySentence.map((s, i) => (i < bySentence.length - 1 ? s + "." : s));
+    }
+    return byNewline;
+  };
+
   // ── Render instruction as bullet points ──────────────────────────────────────
   const renderBulletInstruction = (instruction: string, textStyle: object) => {
     const lines = instruction.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -408,8 +422,8 @@ export default function RecipeDetailScreen() {
           <View style={[styles.cookModeStepNum, { backgroundColor: colors.saffron }]}>
             <Text style={styles.cookModeStepNumText}>{currentStep.step}</Text>
           </View>
-          <View style={{ gap: 10 }}>
-            {currentStep.instruction.split("\n").map((l) => l.trim()).filter(Boolean).map((line, idx) => (
+          <View style={{ gap: 14 }}>
+            {splitToPoints(currentStep.instruction).map((line, idx) => (
               <View key={idx} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
                 <Text style={[styles.cookModeBulletDot, { color: colors.saffron }]}>•</Text>
                 <Text style={[styles.cookModeInstruction, { flex: 1 }]}>
@@ -508,6 +522,13 @@ export default function RecipeDetailScreen() {
               <Text style={styles.creatorAvatarText}>{recipe.creatorAvatar}</Text>
             </View>
             <Text style={[styles.creatorName, { color: colors.mutedForeground }]}>@{recipe.creator}</Text>
+            <TouchableOpacity
+              style={[styles.servingsPill, { backgroundColor: colors.muted, borderColor: colors.border }]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowServingsModal(true); }}
+            >
+              <Feather name="users" size={13} color={colors.mutedForeground} />
+              <Text style={[styles.servingsPillText, { color: colors.foreground }]}>{selectedServings}</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.followSmall, { borderColor: colors.saffron }]}>
               <Text style={[styles.followSmallText, { color: colors.saffron }]}>Follow</Text>
             </TouchableOpacity>
@@ -532,87 +553,6 @@ export default function RecipeDetailScreen() {
             <View style={[styles.tag, { backgroundColor: colors.muted }]}>
               <Text style={[styles.tagText, { color: colors.mutedForeground }]}>{recipe.difficulty}</Text>
             </View>
-          </View>
-
-          {/* Servings selector */}
-          <View style={[styles.servingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={{ marginBottom: 12 }}>
-              <Text style={[styles.servingsLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
-                How many people?
-              </Text>
-              <Text style={[styles.servingsMealType, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
-                {selectedMealType} · Ingredients scale automatically
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {SERVING_PRESETS.map((n) => {
-                const active = selectedServings === n && !customServingsMode;
-                return (
-                  <TouchableOpacity
-                    key={n}
-                    style={[styles.servingChip, {
-                      backgroundColor: active ? colors.saffron : colors.muted,
-                      borderColor: active ? colors.saffron : colors.border,
-                    }]}
-                    onPress={() => { setSelectedServings(n); setCustomServingsMode(false); }}
-                  >
-                    <Text style={[styles.servingChipText, { color: active ? "#fff" : colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
-                      {n}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <TouchableOpacity
-                style={[styles.servingChip, {
-                  backgroundColor: customServingsMode ? colors.saffron : colors.muted,
-                  borderColor: customServingsMode ? colors.saffron : colors.border,
-                  paddingHorizontal: 14,
-                }]}
-                onPress={() => {
-                  setCustomServingsMode(true);
-                  setCustomServingsInput(String(selectedServings));
-                }}
-              >
-                <Feather
-                  name="edit-2"
-                  size={12}
-                  color={customServingsMode ? "#fff" : colors.mutedForeground}
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={[styles.servingChipText, { color: customServingsMode ? "#fff" : colors.mutedForeground, fontFamily: "Inter_500Medium" }]}>
-                  {customServingsMode ? `${selectedServings} custom` : "Custom"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {customServingsMode && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 12 }}>
-                <TextInput
-                  style={[styles.customServingsInput, {
-                    backgroundColor: colors.muted,
-                    borderColor: colors.saffron,
-                    color: colors.foreground,
-                  }]}
-                  value={customServingsInput}
-                  onChangeText={setCustomServingsInput}
-                  keyboardType="number-pad"
-                  placeholder="Enter amount…"
-                  placeholderTextColor={colors.mutedForeground}
-                  autoFocus
-                  returnKeyType="done"
-                  onSubmitEditing={() => {
-                    const n = parseInt(customServingsInput, 10);
-                    if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99));
-                  }}
-                  onBlur={() => {
-                    const n = parseInt(customServingsInput, 10);
-                    if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99));
-                  }}
-                />
-                <Text style={[{ color: colors.mutedForeground, fontSize: 14, fontFamily: "Inter_400Regular" }]}>
-                  {selectedServings} serving{selectedServings !== 1 ? "s" : ""} selected
-                </Text>
-              </View>
-            )}
           </View>
 
           {/* Pantry Match Panel */}
@@ -794,18 +734,14 @@ export default function RecipeDetailScreen() {
                     )}
                   </View>
                   <View style={{ flex: 1, gap: 5 }}>
-                    {lines.length > 1 ? lines.map((line, idx) => (
+                    {splitToPoints(step.instruction).map((line, idx) => (
                       <View key={idx} style={{ flexDirection: "row", gap: 7, alignItems: "flex-start" }}>
                         <Text style={[styles.stepInstruction, { color: done ? colors.mutedForeground : colors.saffron, textDecorationLine: "none", marginTop: 1 }]}>•</Text>
                         <Text style={[styles.stepInstruction, { flex: 1, color: done ? colors.mutedForeground : colors.foreground, textDecorationLine: done ? "line-through" : "none" }]}>
                           {line.startsWith("•") ? line.slice(1).trim() : line}
                         </Text>
                       </View>
-                    )) : (
-                      <Text style={[styles.stepInstruction, { color: done ? colors.mutedForeground : colors.foreground, textDecorationLine: done ? "line-through" : "none" }]}>
-                        {step.instruction}
-                      </Text>
-                    )}
+                    ))}
                     {step.timerMinutes && !done && (
                       <TouchableOpacity
                         style={[styles.timerBtn, { backgroundColor: colors.saffron + "15" }]}
@@ -890,6 +826,80 @@ export default function RecipeDetailScreen() {
           <Feather name="share-2" size={20} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
+
+      {/* ── SERVINGS MODAL ── */}
+      <Modal visible={showServingsModal} transparent animationType="slide" onRequestClose={() => setShowServingsModal(false)}>
+        <View style={styles.servingsOverlay}>
+          <View style={[styles.servingsSheet, { backgroundColor: colors.background }]}>
+            <View style={[styles.servingsHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.servingsTitleText, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+              How many people? 🧑‍🍳
+            </Text>
+            <Text style={[styles.servingsSubText, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
+              {recipe?.title} · Ingredients scale automatically
+            </Text>
+            <View style={styles.servingsBtnRow}>
+              {[1, 2, 3, 4, 5, 6, 8].map((n) => {
+                const active = selectedServings === n && !customServingsMode;
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    style={[styles.servingsNumBtn, {
+                      backgroundColor: active ? colors.saffron : colors.card,
+                      borderColor: active ? colors.saffron : colors.border,
+                    }]}
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedServings(n); setCustomServingsMode(false); }}
+                  >
+                    <Text style={[styles.servingsNumText, { color: active ? "#fff" : colors.foreground, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium" }]}>
+                      {n}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[styles.servingsNumBtn, {
+                  backgroundColor: customServingsMode ? colors.saffron : colors.card,
+                  borderColor: customServingsMode ? colors.saffron : colors.border,
+                  flexDirection: "row", width: "auto" as any, paddingHorizontal: 14, gap: 5,
+                }]}
+                onPress={() => { setCustomServingsMode(true); setCustomServingsInput(String(selectedServings)); }}
+              >
+                <Feather name="edit-2" size={14} color={customServingsMode ? "#fff" : colors.mutedForeground} />
+                <Text style={[styles.servingsNumText, { color: customServingsMode ? "#fff" : colors.mutedForeground }]}>
+                  {customServingsMode ? selectedServings : "Custom"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {customServingsMode && (
+              <TextInput
+                style={[styles.servingsCustomInput, { backgroundColor: colors.muted, borderColor: colors.saffron, color: colors.foreground }]}
+                value={customServingsInput}
+                onChangeText={setCustomServingsInput}
+                keyboardType="number-pad"
+                placeholder="Enter number of servings…"
+                placeholderTextColor={colors.mutedForeground}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={() => { const n = parseInt(customServingsInput, 10); if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99)); }}
+                onBlur={() => { const n = parseInt(customServingsInput, 10); if (!isNaN(n) && n > 0) setSelectedServings(Math.min(n, 99)); }}
+              />
+            )}
+            <TouchableOpacity
+              style={[styles.servingsCookBtn, { backgroundColor: colors.saffron }]}
+              onPress={() => setShowServingsModal(false)}
+            >
+              <Text style={[styles.servingsCookBtnText, { fontFamily: "Inter_700Bold" }]}>
+                Apply · {selectedServings} serving{selectedServings !== 1 ? "s" : ""} ✓
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ paddingVertical: 12, alignItems: "center" }} onPress={() => setShowServingsModal(false)}>
+              <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
+                Skip for now
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── CELEBRATION OVERLAY ── */}
       {showCelebration && (
@@ -1013,20 +1023,28 @@ const styles = StyleSheet.create({
   tag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
   tagText: { fontSize: 12 },
 
-  servingsCard: {
-    borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 16,
+  servingsPill: {
+    flexDirection: "row" as const, alignItems: "center" as const, gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1,
   },
-  servingsLabel: { fontSize: 15 },
-  servingsMealType: { fontSize: 12, marginTop: 2 },
-  servingChip: {
-    flexDirection: "row" as const,
-    width: 46, height: 46, borderRadius: 12, borderWidth: 1,
+  servingsPillText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+
+  servingsOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.55)" },
+  servingsSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 44 },
+  servingsHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center" as const, marginBottom: 22 },
+  servingsTitleText: { fontSize: 28, letterSpacing: -0.5, marginBottom: 6 },
+  servingsSubText: { fontSize: 14, marginBottom: 22 },
+  servingsBtnRow: { flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 10, marginBottom: 16 },
+  servingsNumBtn: {
+    width: 58, height: 58, borderRadius: 16, borderWidth: 1.5,
     alignItems: "center" as const, justifyContent: "center" as const,
   },
-  servingChipText: { fontSize: 16 },
-  customServingsInput: {
-    flex: 1, height: 44, borderRadius: 12, borderWidth: 1.5,
-    paddingHorizontal: 14, fontSize: 16, fontFamily: "Inter_500Medium",
+  servingsNumText: { fontSize: 18 },
+  servingsCookBtn: { paddingVertical: 17, borderRadius: 16, alignItems: "center" as const, marginTop: 8 },
+  servingsCookBtnText: { color: "#fff", fontSize: 17 },
+  servingsCustomInput: {
+    height: 50, borderRadius: 14, borderWidth: 1.5,
+    paddingHorizontal: 16, fontSize: 17, fontFamily: "Inter_500Medium", marginBottom: 12,
   },
 
   section: { marginBottom: 20 },
