@@ -110,7 +110,7 @@ export default function HomeScreen() {
   const { unreadCount } = useNotifications();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { userProfile, getPantryMatchScore, saveRecipe, pantryItems, liveRecipes, getPersonalizedRecipes } = useApp();
+  const { userProfile, getPantryMatchScore, saveRecipe, pantryItems, liveRecipes, getPersonalizedRecipes, trackSwipe } = useApp();
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const hasBanner = pantryItems.length > 0;
@@ -281,29 +281,32 @@ export default function HomeScreen() {
   const handleSwipeLeft = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     triggerParticles("left");
+    const recipe = filteredRecipes[currentIndex];
+    if (recipe) trackSwipe(recipe, "left");
     setCurrentIndex((prev) => Math.min(prev + 1, filteredRecipes.length));
-  }, [filteredRecipes.length, triggerParticles]);
+  }, [filteredRecipes, currentIndex, triggerParticles, trackSwipe]);
 
   const handleSwipeRight = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     triggerParticles("right");
     const recipe = filteredRecipes[currentIndex];
+    if (recipe) trackSwipe(recipe, "right");
     setCurrentIndex((prev) => Math.min(prev + 1, filteredRecipes.length));
     if (recipe) {
       setPendingSwipeRecipe(recipe);
       setSelectedServings(2);
       setShowServingsModal(true);
     }
-  }, [filteredRecipes, currentIndex, triggerParticles]);
+  }, [filteredRecipes, currentIndex, triggerParticles, trackSwipe]);
 
   const handleSwipeUp = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const recipe = filteredRecipes[currentIndex];
-    if (recipe) saveRecipe(recipe.id);
+    if (recipe) { saveRecipe(recipe.id); trackSwipe(recipe, "up"); }
     triggerParticles("up");
     showSaveToast();
     setCurrentIndex((prev) => Math.min(prev + 1, filteredRecipes.length));
-  }, [filteredRecipes, currentIndex, saveRecipe, triggerParticles, showSaveToast]);
+  }, [filteredRecipes, currentIndex, saveRecipe, trackSwipe, triggerParticles, showSaveToast]);
 
   // ── Deep-link intent from notifications ──────────────────────────────────────
   useFocusEffect(

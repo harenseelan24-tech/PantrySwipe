@@ -197,7 +197,28 @@ interface AppContextType {
   getIngredientMatches: (recipe: Recipe) => Array<{ name: string; amount: string; inPantry: boolean; sufficient: boolean }>;
   refreshRecipes: () => void;
   getPersonalizedRecipes: (pool?: Recipe[]) => Recipe[];
+  learningProfile: LearningProfile;
+  trackSwipe: (recipe: Recipe, direction: "right" | "left" | "up") => void;
 }
+
+// ─── Learning / adaptive preferences ─────────────────────────────────────────
+export interface LearningProfile {
+  /** Cuisine → number of right swipes (cook) */
+  swipeRights: Record<string, number>;
+  /** Cuisine → number of left swipes (skip) */
+  swipeLefts: Record<string, number>;
+  /** Cuisine → number of up swipes (save) */
+  saved: Record<string, number>;
+  /** How many swipes total so we know when to start weighting */
+  totalSwipes: number;
+}
+
+const defaultLearning: LearningProfile = {
+  swipeRights: {},
+  swipeLefts: {},
+  saved: {},
+  totalSwipes: 0,
+};
 
 const defaultProfile: UserProfile = {
   name: "Alex",
@@ -207,9 +228,9 @@ const defaultProfile: UserProfile = {
   dietType: ["Omnivore"],
   allergies: [],
   householdSize: 2,
-  cuisinePreferences: ["Italian", "Japanese", "Korean"],
+  cuisinePreferences: [],
   goal: "Eat Healthier",
-  weeklyBudget: 100,
+  weeklyBudget: 0,
   setupComplete: false,
 };
 
@@ -233,6 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [cookingHistory, setCookingHistory] = useState<CookingEntry[]>([]);
   const [stats, setStats] = useState<CookingStats>(defaultStats);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
+  const [learningProfile, setLearningProfile] = useState<LearningProfile>(defaultLearning);
 
   const [liveRecipes, setLiveRecipes] = useState<Recipe[]>(MOCK_RECIPES);
   const [recipesLoading, setRecipesLoading] = useState(false);
@@ -241,7 +263,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const loadData = async () => {
     try {
-      const [profileData, pantryData, savedData, cookedData, statsData, setupData, historyData] =
+      const [profileData, pantryData, savedData, cookedData, statsData, setupData, historyData, learningData] =
         await Promise.all([
           AsyncStorage.getItem("pantryswipe_profile"),
           AsyncStorage.getItem("pantryswipe_pantry"),
@@ -250,6 +272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem("pantryswipe_stats"),
           AsyncStorage.getItem("pantryswipe_setup_complete"),
           AsyncStorage.getItem("pantryswipe_cooking_history"),
+          AsyncStorage.getItem("pantryswipe_learning"),
         ]);
 
       const loadedProfile: UserProfile | undefined = profileData
@@ -262,6 +285,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (statsData) setStats(JSON.parse(statsData));
       if (setupData) setIsSetupComplete(JSON.parse(setupData));
       if (historyData) setCookingHistory(JSON.parse(historyData));
+      if (learningData) setLearningProfile(JSON.parse(learningData));
 
       fetchLiveRecipes(loadedProfile);
     } catch {
@@ -311,10 +335,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const completeSetup = () => {
     setIsSetupComplete(true);
     saveData("pantryswipe_setup_complete", true);
-    const updated = { ...userProfile, setupComplete: true };
-    setUserProfile(updated);
-    saveData("pantryswipe_profile", updated);
-    fetchLiveRecipes(updated);
+    // Use functional update so we get the LATEST state (including any
+    // changes from updateProfile called just before this in onboarding).
+    setUserProfile((prev) => {
+      const updated = { ...prev, setupComplete: true };
+      saveData("pantryswipe_profile", updated);
+      fetchLiveRecipes(updated);
+      return updated;
+    });
   };
 
   const addToPantry = (item: PantryItem) => {
@@ -478,6 +506,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return [...liveRecipes].sort((a, b) => getPantryMatchScore(b) - getPantryMatchScore(a));
   };
 
+  const trackSwipe = useCallback((recipe: Recipe, direction: "right" | "left" | "up") => {
+    setLearningProfile((prev) => {
+      const cuisine = recipe.cuisine;
+      const updated: LearningProfile = {
+        totalSwipes: prev.totalSwipes + 1,
+        swipeRights: direction === "right"
+          ? { ...prev.swipeRights, [cuisine]: (prev.swipeRights[cuisine] ?? 0) + 1 }
+          : prev.swipeRights,
+        swipeLefts: direction === "left"
+          ? { ...prev.swipeLefts, [cuisine]: (prev.swipeLefts[cuisine] ?? 0) + 1 }
+          : prev.swipeLefts,
+        saved: direction === "up"
+          ? { ...prev.saved, [cuisine]: (prev.saved[cuisine] ?? 0) + 1 }
+          : prev.saved,
+      };
+      saveData("pantryswipe_learning", updated);
+      return updated;
+    });
+  }, []);
+
   const getPersonalizedRecipes = useCallback((pool?: Recipe[]): Recipe[] => {
     const source = pool ?? liveRecipes;
     const prefs = userProfile;
@@ -513,20 +561,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (manageable.length >= 3) filtered = manageable;
     }
 
-    // 5. Goal-based sort
-    const goalSort = (a: Recipe, b: Recipe): number => {
+    // 5. Combined score: goal signal + learning signal
+    // Learning boost: right swipes & saves push cuisine up, left swipes push it down.
+    // Only meaningful after 5+ swipes to avoid premature over-fitting.
+    const learningWeight = learningProfile.totalSwipes >= 5 ? 1 : 0;
+
+    const score = (r: Recipe): number => {
+      let s = 0;
       switch (prefs.goal) {
-        case "Build Muscle":   return b.nutrition.protein - a.nutrition.protein;
-        case "Eat Healthier":  return (b.nutrition.fiber - a.nutrition.fiber) || (a.calories - b.calories);
-        case "Cook Faster":    return (a.prepTime + a.cookTime) - (b.prepTime + b.cookTime);
-        case "Cook for Others": return b.servings - a.servings;
-        case "Save Money":     return a.ingredients.length - b.ingredients.length;
-        default: return 0;
+        case "Build Muscle":    s += r.nutrition.protein * 0.1; break;
+        case "Eat Healthier":   s += r.nutrition.fiber * 0.3 - r.calories * 0.001; break;
+        case "Cook Faster":     s += -(r.prepTime + r.cookTime) * 0.05; break;
+        case "Cook for Others": s += r.servings * 0.2; break;
+        case "Save Money":      s += -r.ingredients.length * 0.1; break;
       }
+      const cuisine = r.cuisine;
+      s += learningWeight * (
+        (learningProfile.swipeRights[cuisine] ?? 0) * 1.0 +
+        (learningProfile.saved[cuisine] ?? 0) * 1.5 -
+        (learningProfile.swipeLefts[cuisine] ?? 0) * 0.8
+      );
+      return s;
     };
 
-    return [...filtered].sort(goalSort);
-  }, [liveRecipes, userProfile]);
+    return [...filtered].sort((a, b) => score(b) - score(a));
+  }, [liveRecipes, userProfile, learningProfile]);
 
   const refreshRecipes = useCallback(() => { fetchLiveRecipes(); }, [fetchLiveRecipes]);
 
@@ -539,7 +598,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addToPantry, removeFromPantry, updatePantryItem,
         saveRecipe, unsaveRecipe, markCooked, cookDish,
         getMatchingRecipes, getPantryMatchScore, getIngredientMatches, refreshRecipes,
-        getPersonalizedRecipes,
+        getPersonalizedRecipes, learningProfile, trackSwipe,
       }}
     >
       {children}
