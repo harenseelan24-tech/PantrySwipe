@@ -53,7 +53,7 @@ export default function ScanFridgeModal({ visible, onClose, onDone }: Props) {
   const [scanning, setScanning] = useState(false);
 
   // Native-only state
-  const [nativePhase, setNativePhase] = useState<"idle" | "scanning" | "error-perm" | "error-offline" | "error-unknown">("idle");
+  const [nativePhase, setNativePhase] = useState<"idle" | "scanning" | "error-perm" | "error-offline" | "error-unknown" | "error-server" | "error-ratelimit">("idle");
   const [nativeLoading, setNativeLoading] = useState(false);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -165,7 +165,8 @@ export default function ScanFridgeModal({ visible, onClose, onDone }: Props) {
         signal: AbortSignal.timeout(60000),
       });
 
-      if (!res.ok) throw new Error("api-error");
+      if (res.status === 429) { setNativePhase("error-ratelimit"); return; }
+      if (!res.ok) { setNativePhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
       const newItems = data.items ?? [];
 
@@ -185,12 +186,8 @@ export default function ScanFridgeModal({ visible, onClose, onDone }: Props) {
         setNativePhase("idle");
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.name : "";
-      if (msg === "NetworkError") {
-        setNativePhase("error-offline");
-      } else {
-        setNativePhase("error-unknown");
-      }
+      const name = err instanceof Error ? err.name : "";
+      setNativePhase(name === "NetworkError" ? "error-offline" : "error-unknown");
     } finally {
       setNativeLoading(false);
     }
@@ -225,7 +222,8 @@ export default function ScanFridgeModal({ visible, onClose, onDone }: Props) {
         signal: AbortSignal.timeout(60000),
       });
 
-      if (!res.ok) throw new Error("api-error");
+      if (res.status === 429) { setNativePhase("error-ratelimit"); return; }
+      if (!res.ok) { setNativePhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
       const newItems = data.items ?? [];
 
@@ -245,12 +243,8 @@ export default function ScanFridgeModal({ visible, onClose, onDone }: Props) {
         setNativePhase("idle");
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.name : "";
-      if (msg === "NetworkError") {
-        setNativePhase("error-offline");
-      } else {
-        setNativePhase("error-unknown");
-      }
+      const name = err instanceof Error ? err.name : "";
+      setNativePhase(name === "NetworkError" ? "error-offline" : "error-unknown");
     } finally {
       setNativeLoading(false);
     }
@@ -381,6 +375,27 @@ export default function ScanFridgeModal({ visible, onClose, onDone }: Props) {
             {nativePhase === "error-unknown" && (
               <View style={s.nativeError}>
                 <Text style={s.nativeErrorTxt}>⚠️ Scan failed — please try again.</Text>
+                <TouchableOpacity style={[s.nativeOutlineBtn, { marginTop: 10 }]} onPress={() => setNativePhase("idle")}>
+                  <Text style={s.nativeOutlineBtnTxt}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {nativePhase === "error-server" && (
+              <View style={s.nativeError}>
+                <Text style={s.nativeErrorTxt}>🔧 Server error — the AI scanner ran into an issue. Wait a moment and try again.</Text>
+                <TouchableOpacity style={[s.nativeOutlineBtn, { marginTop: 10 }]} onPress={() => setNativePhase("idle")}>
+                  <Text style={s.nativeOutlineBtnTxt}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {nativePhase === "error-ratelimit" && (
+              <View style={s.nativeError}>
+                <Text style={s.nativeErrorTxt}>⏳ Scan limit reached — you've used all free scans this hour. Try again in 60 minutes.</Text>
+                <TouchableOpacity style={[s.nativeOutlineBtn, { marginTop: 10 }]} onPress={() => setNativePhase("idle")}>
+                  <Text style={s.nativeOutlineBtnTxt}>Got it</Text>
+                </TouchableOpacity>
               </View>
             )}
 

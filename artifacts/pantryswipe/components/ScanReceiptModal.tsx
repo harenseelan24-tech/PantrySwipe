@@ -24,8 +24,8 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 }
 
-type WebPhase = "preview" | "reading" | "error-unclear" | "error-offline" | "error-denied";
-type NativePhase = "idle" | "reading" | "error-unclear" | "error-offline" | "error-perm" | "error-unknown";
+type WebPhase = "preview" | "reading" | "error-unclear" | "error-offline" | "error-denied" | "error-server" | "error-ratelimit";
+type NativePhase = "idle" | "reading" | "error-unclear" | "error-offline" | "error-perm" | "error-unknown" | "error-server" | "error-ratelimit";
 
 export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
   const colors = useColors();
@@ -63,23 +63,23 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
 
     if (!navigator.onLine) { setWebPhase("error-offline"); return; }
 
-    const attemptScan = async (): Promise<DetectedItem[] | null> => {
-      try {
-        const res = await fetch(`${API_BASE}/vision/scan-receipt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: base64 }),
-          signal: AbortSignal.timeout(45000),
-        });
-        if (!res.ok) return null;
-        const data = (await res.json()) as { items?: DetectedItem[] };
-        return data.items ?? [];
-      } catch {
-        return null;
-      }
-    };
+    let items: DetectedItem[] | null = null;
+    try {
+      const res = await fetch(`${API_BASE}/vision/scan-receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: base64 }),
+        signal: AbortSignal.timeout(45000),
+      });
+      if (res.status === 429) { setWebPhase("error-ratelimit"); return; }
+      if (!res.ok) { setWebPhase("error-server"); return; }
+      const data = (await res.json()) as { items?: DetectedItem[] };
+      items = data.items ?? [];
+    } catch {
+      setWebPhase("error-offline");
+      return;
+    }
 
-    const items = await attemptScan();
     if (items === null || items.length === 0) {
       setWebPhase("error-unclear");
       return;
@@ -155,14 +155,12 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
         body: JSON.stringify({ image: base64 }),
         signal: AbortSignal.timeout(60000),
       });
-      if (!res.ok) { setNativePhase("error-unclear"); return; }
+      if (res.status === 429) { setNativePhase("error-ratelimit"); return; }
+      if (!res.ok) { setNativePhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
       const items = data.items ?? [];
 
-      if (items.length === 0) {
-        setNativePhase("error-unclear");
-        return;
-      }
+      if (items.length === 0) { setNativePhase("error-unclear"); return; }
 
       const enriched = items.map((item) => ({
         ...item,
@@ -172,11 +170,7 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
       onDone(enriched);
     } catch (err: unknown) {
       const name = err instanceof Error ? err.name : "";
-      if (name === "AbortError") {
-        setNativePhase("error-unclear");
-      } else {
-        setNativePhase("error-offline");
-      }
+      setNativePhase(name === "AbortError" ? "error-unclear" : "error-offline");
     }
   }, [onDone]);
 
@@ -205,7 +199,8 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
         body: JSON.stringify({ image: base64 }),
         signal: AbortSignal.timeout(60000),
       });
-      if (!res.ok) { setNativePhase("error-unclear"); return; }
+      if (res.status === 429) { setNativePhase("error-ratelimit"); return; }
+      if (!res.ok) { setNativePhase("error-server"); return; }
       const data = (await res.json()) as { items?: DetectedItem[] };
       const items = data.items ?? [];
 
@@ -219,11 +214,7 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
       onDone(enriched);
     } catch (err: unknown) {
       const name = err instanceof Error ? err.name : "";
-      if (name === "AbortError") {
-        setNativePhase("error-unclear");
-      } else {
-        setNativePhase("error-offline");
-      }
+      setNativePhase(name === "AbortError" ? "error-unclear" : "error-offline");
     }
   }, [onDone]);
 
@@ -300,6 +291,26 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
                 <Text style={s.errorBody}>Camera scanning needs an internet connection.</Text>
                 <TouchableOpacity style={[s.errorBtn, { backgroundColor: colors.primary }]} onPress={handleClose}>
                   <Text style={s.errorBtnTxt}>Go Back</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {webPhase === "error-server" && (
+              <View style={s.overlay}>
+                <Text style={s.errorTitle}>🔧 Server error</Text>
+                <Text style={s.errorBody}>The AI scanner ran into an issue. Wait a moment and try again.</Text>
+                <TouchableOpacity style={[s.errorBtn, { backgroundColor: colors.primary }]} onPress={() => setWebPhase("preview")}>
+                  <Text style={s.errorBtnTxt}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {webPhase === "error-ratelimit" && (
+              <View style={s.overlay}>
+                <Text style={s.errorTitle}>⏳ Scan limit reached</Text>
+                <Text style={s.errorBody}>You've used all free scans this hour. Try again in 60 minutes.</Text>
+                <TouchableOpacity style={[s.errorBtn, { backgroundColor: colors.primary }]} onPress={handleClose}>
+                  <Text style={s.errorBtnTxt}>Got it</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -398,6 +409,32 @@ export default function ScanReceiptModal({ visible, onClose, onDone }: Props) {
                   onPress={() => setNativePhase("idle")}
                 >
                   <Text style={s.nativeRetryBtnTxt}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {nativePhase === "error-server" && (
+              <View style={s.nativeError}>
+                <Text style={s.nativeErrorTitle}>🔧 Server error</Text>
+                <Text style={s.nativeErrorTxt}>The AI scanner ran into an issue. Please wait a moment and try again.</Text>
+                <TouchableOpacity
+                  style={[s.nativeRetryBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => setNativePhase("idle")}
+                >
+                  <Text style={s.nativeRetryBtnTxt}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {nativePhase === "error-ratelimit" && (
+              <View style={s.nativeError}>
+                <Text style={s.nativeErrorTitle}>⏳ Scan limit reached</Text>
+                <Text style={s.nativeErrorTxt}>You've used all your free scans for this hour. Try again in 60 minutes.</Text>
+                <TouchableOpacity
+                  style={[s.nativeRetryBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => setNativePhase("idle")}
+                >
+                  <Text style={s.nativeRetryBtnTxt}>Got it</Text>
                 </TouchableOpacity>
               </View>
             )}

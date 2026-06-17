@@ -45,7 +45,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { userProfile, stats, savedRecipes, cookedRecipes, liveRecipes } = useApp();
-  const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Stats");
+  const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Recipes");
   const [recipeSubtab, setRecipeSubtab] = useState<(typeof RECIPE_SUBTABS)[number]>("Saved Later");
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
@@ -128,9 +128,9 @@ export default function ProfileScreen() {
         {/* Tabs — sticky */}
         <View style={[styles.tabsContainer, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
           {PROFILE_TABS.map((tab) => (
-            <TouchableOpacity key={tab} style={styles.tab} onPress={() => setActiveTab(tab)}>
-              <Text style={[styles.tabText, { color: activeTab === tab ? colors.foreground : colors.textSecondary, fontFamily: activeTab === tab ? "Inter_700Bold" : "Inter_500Medium" }]}>{tab}</Text>
+            <TouchableOpacity key={tab} style={[styles.tab, { borderBottomColor: colors.border }]} onPress={() => setActiveTab(tab)}>
               {activeTab === tab && <View style={[styles.tabIndicator, { backgroundColor: colors.primary }]} />}
+              <Text style={[styles.tabText, { color: activeTab === tab ? colors.foreground : colors.textSecondary, fontFamily: activeTab === tab ? "Inter_700Bold" : "Inter_500Medium", paddingLeft: 8 }]}>{tab}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -322,10 +322,10 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 20 },
   statLabel: { fontSize: 12 },
   statDivider: { width: 1, height: 28 },
-  tabsContainer: { flexDirection: "row", borderBottomWidth: 1 },
-  tab: { flex: 1, alignItems: "center", paddingVertical: 13, position: "relative" },
-  tabText: { fontSize: 13 },
-  tabIndicator: { position: "absolute", bottom: 0, left: "20%", right: "20%", height: 2, borderRadius: 1 },
+  tabsContainer: { borderBottomWidth: 1 },
+  tab: { flexDirection: "row", alignItems: "center", paddingVertical: 15, paddingHorizontal: 20, position: "relative", borderBottomWidth: StyleSheet.hairlineWidth },
+  tabText: { fontSize: 14 },
+  tabIndicator: { position: "absolute", left: 0, top: 8, bottom: 8, width: 3, borderRadius: 2 },
   tabContent: { padding: 16, paddingBottom: 80 },
   subtabRow: { gap: 8, paddingRight: 8, alignItems: "center", height: 42 },
   subtab: { height: 32, paddingHorizontal: 16, borderRadius: 100, borderWidth: 1, alignItems: "center", justifyContent: "center" },

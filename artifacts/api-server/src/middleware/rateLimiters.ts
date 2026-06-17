@@ -26,10 +26,10 @@ export const globalLimiter = rateLimit({
  */
 export const visionLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: isDev ? 10_000 : 20,
+  max: isDev ? 10_000 : 100,
   standardHeaders: "draft-8",
   legacyHeaders: false,
-  handler: make429("AI scan limit reached — maximum 20 scans per hour per device. Try again later."),
+  handler: make429("AI scan limit reached — maximum 100 scans per hour per device. Try again later."),
 });
 
 /**

@@ -112,7 +112,7 @@ If no food items are visible, return [].`;
     res.json({ items: items.map((item) => ({ ...item, emoji: assignEmoji(item.category) })) });
   } catch (err) {
     logger.error({ err }, "scan-pantry vision error");
-    res.json({ items: [] });
+    res.status(500).json({ error: "Vision service failed. Please try again." });
   }
 });
 
@@ -145,7 +145,7 @@ If the image is not a readable receipt, return [].`;
     res.json({ items: items.map((item) => ({ ...item, emoji: assignEmoji(item.category) })) });
   } catch (err) {
     logger.error({ err }, "scan-receipt vision error");
-    res.json({ items: [] });
+    res.status(500).json({ error: "Vision service failed. Please try again." });
   }
 });
 

@@ -236,7 +236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       params.set("limit", "60");
 
       const res = await fetch(`${API_BASE}/recipes/swipe?${params.toString()}`, {
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!res.ok) return;
