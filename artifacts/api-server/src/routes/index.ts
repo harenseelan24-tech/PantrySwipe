@@ -3,6 +3,7 @@ import healthRouter from "./health";
 import barcodeRouter from "./barcode";
 import visionRouter from "./vision";
 import recipesRouter from "./recipes";
+import varyRouter from "./vary";
 
 const router: IRouter = Router();
 
@@ -10,5 +11,6 @@ router.use(healthRouter);
 router.use(barcodeRouter);
 router.use(visionRouter);
 router.use(recipesRouter);
+router.use(varyRouter);
 
 export default router;

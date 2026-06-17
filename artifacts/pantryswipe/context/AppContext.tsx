@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { INITIAL_PANTRY, MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
 
-// ─── Pantry quantity-aware ingredient matching helpers ───────────────────────
+// ─── Unit normalisation ───────────────────────────────────────────────────────
 function normalizeUnit(unit: string): string {
   const u = unit.toLowerCase().trim();
   if (["g", "gram", "grams", "gr"].includes(u)) return "g";
@@ -30,7 +30,7 @@ const API_BASE = Platform.OS !== "web"
   ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}/api`
   : "/api";
 
-// ─── API recipe shape returned by the server ──────────────────────────────────
+// ─── API recipe shape ─────────────────────────────────────────────────────────
 interface ApiRecipe {
   id: number;
   name: string;
@@ -52,7 +52,6 @@ interface ApiRecipe {
   pantry_match_percent?: number;
 }
 
-/** Map an API recipe response to the app's frontend Recipe type */
 function mapApiRecipe(r: ApiRecipe): Recipe {
   const totalTime = r.cook_time_mins ?? 30;
   const prepTime = Math.round(totalTime * 0.3);
@@ -81,21 +80,32 @@ function mapApiRecipe(r: ApiRecipe): Recipe {
     steps: (r.steps_json ?? []).map((s) => ({
       step: s.step_number,
       instruction: s.instruction,
-      timerMinutes: s.timer_seconds ? Math.round(s.timer_seconds / 60) : undefined,
+      timerMinutes: s.timer_seconds ? Math.ceil(s.timer_seconds / 60) : undefined,
     })),
     nutrition: {
-      protein: macros.protein ?? 0,
-      carbs: macros.carbs ?? 0,
-      fat: macros.fat ?? 0,
-      fiber: (macros as any).fibre ?? 0,
+      protein: macros.protein,
+      carbs: macros.carbs,
+      fat: macros.fat,
+      fiber: macros.fibre,
     },
     tags: r.tags ?? [],
     image: r.image_url ?? null,
-    creator: r.source === "themealdb" ? "TheMealDB" : "AI Chef",
-    creatorAvatar: "",
+    creator: "PantrySwipe",
+    creatorAvatar: "👨‍🍳",
     dietTags: r.dietary_flags ?? [],
     eventTypes: r.event_types ?? [],
   };
+}
+
+// ─── Cooking history entry ────────────────────────────────────────────────────
+export interface CookingEntry {
+  id: string;
+  recipeId: string;
+  recipeTitle: string;
+  /** ISO date string "YYYY-MM-DD" */
+  date: string;
+  mealType: "Breakfast" | "Lunch" | "Dinner";
+  servings: number;
 }
 
 // ─── Context types ────────────────────────────────────────────────────────────
@@ -128,6 +138,7 @@ interface AppContextType {
   pantryItems: PantryItem[];
   savedRecipes: string[];
   cookedRecipes: string[];
+  cookingHistory: CookingEntry[];
   stats: CookingStats;
   isSetupComplete: boolean;
   liveRecipes: Recipe[];
@@ -140,6 +151,7 @@ interface AppContextType {
   saveRecipe: (id: string) => void;
   unsaveRecipe: (id: string) => void;
   markCooked: (id: string) => void;
+  cookDish: (recipe: Recipe, mealType: "Breakfast" | "Lunch" | "Dinner", servings: number) => number;
   getMatchingRecipes: () => Recipe[];
   getPantryMatchScore: (recipe: Recipe) => number;
   getIngredientMatches: (recipe: Recipe) => Array<{ name: string; amount: string; inPantry: boolean; sufficient: boolean }>;
@@ -177,31 +189,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pantryItems, setPantryItems] = useState<PantryItem[]>(INITIAL_PANTRY);
   const [savedRecipes, setSavedRecipes] = useState<string[]>(["1", "3"]);
   const [cookedRecipes, setCookedRecipes] = useState<string[]>(["1", "2", "4"]);
+  const [cookingHistory, setCookingHistory] = useState<CookingEntry[]>([]);
   const [stats, setStats] = useState<CookingStats>(defaultStats);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
 
-  // Live recipes from API — falls back to MOCK_RECIPES when not yet loaded
   const [liveRecipes, setLiveRecipes] = useState<Recipe[]>(MOCK_RECIPES);
   const [recipesLoading, setRecipesLoading] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const [profileData, pantryData, savedData, cookedData, statsData, setupData] = await Promise.all([
-        AsyncStorage.getItem("pantryswipe_profile"),
-        AsyncStorage.getItem("pantryswipe_pantry"),
-        AsyncStorage.getItem("pantryswipe_saved"),
-        AsyncStorage.getItem("pantryswipe_cooked"),
-        AsyncStorage.getItem("pantryswipe_stats"),
-        AsyncStorage.getItem("pantryswipe_setup_complete"),
-      ]);
+      const [profileData, pantryData, savedData, cookedData, statsData, setupData, historyData] =
+        await Promise.all([
+          AsyncStorage.getItem("pantryswipe_profile"),
+          AsyncStorage.getItem("pantryswipe_pantry"),
+          AsyncStorage.getItem("pantryswipe_saved"),
+          AsyncStorage.getItem("pantryswipe_cooked"),
+          AsyncStorage.getItem("pantryswipe_stats"),
+          AsyncStorage.getItem("pantryswipe_setup_complete"),
+          AsyncStorage.getItem("pantryswipe_cooking_history"),
+        ]);
 
       const loadedProfile: UserProfile | undefined = profileData
-        ? (JSON.parse(profileData) as UserProfile)
-        : undefined;
+        ? (JSON.parse(profileData) as UserProfile) : undefined;
 
       if (loadedProfile) setUserProfile(loadedProfile);
       if (pantryData) setPantryItems(JSON.parse(pantryData));
@@ -209,12 +220,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (cookedData) setCookedRecipes(JSON.parse(cookedData));
       if (statsData) setStats(JSON.parse(statsData));
       if (setupData) setIsSetupComplete(JSON.parse(setupData));
+      if (historyData) setCookingHistory(JSON.parse(historyData));
 
-      // Pass loaded profile so we use correct saved cuisine prefs, not the
-      // stale default profile from the first render closure.
       fetchLiveRecipes(loadedProfile);
     } catch {
-      // Use defaults on error — still attempt to fetch live recipes
       fetchLiveRecipes();
     }
   };
@@ -228,30 +237,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const prefs = profile ?? userProfile;
       const params = new URLSearchParams();
-      if (prefs.cuisinePreferences?.length) {
-        params.set("cuisines", prefs.cuisinePreferences.join(","));
-      }
-      if (prefs.allergies?.length) {
-        params.set("allergies", prefs.allergies.join(","));
-      }
+      if (prefs.cuisinePreferences?.length) params.set("cuisines", prefs.cuisinePreferences.join(","));
+      if (prefs.allergies?.length) params.set("allergies", prefs.allergies.join(","));
       params.set("limit", "60");
 
       const recipeController = new AbortController();
       const recipeTimer = setTimeout(() => recipeController.abort(), 30000);
-      const res = await fetch(`${API_BASE}/recipes/swipe?${params.toString()}`, {
-        signal: recipeController.signal,
-      });
+      const res = await fetch(`${API_BASE}/recipes/swipe?${params.toString()}`, { signal: recipeController.signal });
       clearTimeout(recipeTimer);
 
       if (!res.ok) return;
       const data: ApiRecipe[] = await res.json();
-
-      if (Array.isArray(data) && data.length > 0) {
-        setLiveRecipes(data.map(mapApiRecipe));
-      }
-      // If API returns empty (not yet seeded), MOCK_RECIPES remain as fallback
+      if (Array.isArray(data) && data.length > 0) setLiveRecipes(data.map(mapApiRecipe));
     } catch {
-      // Network error — keep current recipes (mock or previously loaded)
+      // keep current recipes
     } finally {
       isFetchingRef.current = false;
       setRecipesLoading(false);
@@ -259,11 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [userProfile]);
 
   const saveData = async (key: string, value: unknown) => {
-    try {
-      await AsyncStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // ignore
-    }
+    try { await AsyncStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ }
   };
 
   const updateProfile = (updates: Partial<UserProfile>) => {
@@ -278,7 +273,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const updated = { ...userProfile, setupComplete: true };
     setUserProfile(updated);
     saveData("pantryswipe_profile", updated);
-    // Refresh recipes with the newly saved profile preferences
     fetchLiveRecipes(updated);
   };
 
@@ -331,6 +325,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Cook a dish: logs to history, deducts pantry ingredients, updates stats.
+   * Returns the number of pantry items actually deducted.
+   */
+  const cookDish = useCallback((recipe: Recipe, mealType: "Breakfast" | "Lunch" | "Dinner", servings: number): number => {
+    const today = new Date().toISOString().split("T")[0];
+
+    // 1. Log cooking history entry
+    const entry: CookingEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      recipeId: recipe.id,
+      recipeTitle: recipe.title,
+      date: today,
+      mealType,
+      servings,
+    };
+    const newHistory = [...cookingHistory, entry];
+    setCookingHistory(newHistory);
+    saveData("pantryswipe_cooking_history", newHistory);
+
+    // 2. Mark as cooked (add to cookedRecipes array)
+    const wasCooked = cookedRecipes.includes(recipe.id);
+    if (!wasCooked) {
+      const updated = [...cookedRecipes, recipe.id];
+      setCookedRecipes(updated);
+      saveData("pantryswipe_cooked", updated);
+    }
+
+    // 3. Update stats
+    const newStats = {
+      ...stats,
+      mealsCoooked: stats.mealsCoooked + 1,
+      xp: stats.xp + 50,
+      streak: stats.streak + 1,
+      moneySaved: stats.moneySaved + 12,
+      lastCookedDate: new Date().toISOString(),
+    };
+    setStats(newStats);
+    saveData("pantryswipe_stats", newStats);
+
+    // 4. Deduct ingredients from pantry
+    const scaleFactor = servings / Math.max(1, recipe.servings);
+    let deducted = 0;
+    let updatedPantry = [...pantryItems];
+
+    recipe.ingredients.forEach((ing) => {
+      const matchIdx = updatedPantry.findIndex((p) => {
+        const pName = p.name.toLowerCase();
+        const iName = ing.name.toLowerCase();
+        return pName.includes(iName) || iName.includes(pName);
+      });
+      if (matchIdx === -1) return;
+
+      const pantryItem = updatedPantry[matchIdx];
+      const needed = parseIngredientAmount(ing.amount);
+
+      let deductQty = 1 * scaleFactor;
+      if (needed) {
+        const haveUnit = normalizeUnit(pantryItem.unit);
+        const needUnit = normalizeUnit(needed.unit || "piece");
+        if (haveUnit === needUnit || needUnit === "piece") {
+          deductQty = needed.value * scaleFactor;
+        } else {
+          return; // unit mismatch — skip
+        }
+      }
+
+      const newQty = Math.max(0, pantryItem.quantity - deductQty);
+      updatedPantry[matchIdx] = { ...pantryItem, quantity: +newQty.toFixed(2) };
+      deducted++;
+    });
+
+    // Remove fully depleted items
+    updatedPantry = updatedPantry.filter((p) => p.quantity > 0);
+    setPantryItems(updatedPantry);
+    saveData("pantryswipe_pantry", updatedPantry);
+
+    return deducted;
+  }, [cookingHistory, cookedRecipes, pantryItems, stats]);
+
   const getIngredientMatches = useCallback((recipe: Recipe) => {
     return recipe.ingredients.map((ing) => {
       const ingName = ing.name.toLowerCase();
@@ -363,33 +437,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return [...liveRecipes].sort((a, b) => getPantryMatchScore(b) - getPantryMatchScore(a));
   };
 
-  const refreshRecipes = useCallback(() => {
-    fetchLiveRecipes();
-  }, [fetchLiveRecipes]);
+  const refreshRecipes = useCallback(() => { fetchLiveRecipes(); }, [fetchLiveRecipes]);
 
   return (
     <AppContext.Provider
       value={{
-        userProfile,
-        pantryItems,
-        savedRecipes,
-        cookedRecipes,
-        stats,
-        isSetupComplete,
-        liveRecipes,
-        recipesLoading,
-        updateProfile,
-        completeSetup,
-        addToPantry,
-        removeFromPantry,
-        updatePantryItem,
-        saveRecipe,
-        unsaveRecipe,
-        markCooked,
-        getMatchingRecipes,
-        getPantryMatchScore,
-        getIngredientMatches,
-        refreshRecipes,
+        userProfile, pantryItems, savedRecipes, cookedRecipes, cookingHistory,
+        stats, isSetupComplete, liveRecipes, recipesLoading,
+        updateProfile, completeSetup,
+        addToPantry, removeFromPantry, updatePantryItem,
+        saveRecipe, unsaveRecipe, markCooked, cookDish,
+        getMatchingRecipes, getPantryMatchScore, getIngredientMatches, refreshRecipes,
       }}
     >
       {children}

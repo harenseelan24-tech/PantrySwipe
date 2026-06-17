@@ -111,6 +111,7 @@ export default function PantryScreen() {
   const [scannedReceiptItems, setScannedReceiptItems] = useState<DetectedItem[]>([]);
   const [showExpiryModal, setShowExpiryModal] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [showLowStockModal, setShowLowStockModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
   const [newItemQty, setNewItemQty] = useState("1");
   const [newItemUnit, setNewItemUnit] = useState("pieces");
@@ -163,6 +164,16 @@ export default function PantryScreen() {
   });
 
   const expiringItems = pantryItems.filter((i) => i.status === "Expiring" || i.status === "Expired");
+
+  const isLowStock = (item: PantryItem): boolean => {
+    const unit = item.unit.toLowerCase().trim();
+    if (["g", "gram", "grams", "gr"].includes(unit)) return item.quantity < 50;
+    if (["kg", "kilogram", "kilograms"].includes(unit)) return item.quantity < 0.2;
+    if (["ml", "milliliter", "milliliters"].includes(unit)) return item.quantity < 50;
+    if (["l", "liter", "liters"].includes(unit)) return item.quantity < 0.25;
+    return item.quantity <= 1;
+  };
+  const lowStockItems = pantryItems.filter(isLowStock);
   const completeRecipes = liveRecipes.filter((r) => getPantryMatchScore(r) >= 80).length;
   const oneIngredientAway = liveRecipes.filter((r) => {
     const names = pantryItems.map((p) => p.name.toLowerCase());
@@ -369,6 +380,26 @@ export default function PantryScreen() {
               <Text style={[styles.expiryViewLink, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
                 View →
               </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* ── LOW STOCK BANNER ── */}
+        {lowStockItems.length > 0 && (
+          <TouchableOpacity
+            style={styles.lowStockBanner}
+            onPress={() => setShowLowStockModal(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.lowStockAccent} />
+            <View style={styles.lowStockBody}>
+              <Text style={{ fontSize: 14 }}>📉</Text>
+              <Text style={[styles.lowStockText, { fontFamily: "Inter_400Regular" }]}>
+                <Text style={{ fontFamily: "Inter_600SemiBold" }}>
+                  {lowStockItems.length} item{lowStockItems.length > 1 ? "s" : ""} running low
+                </Text>{" "}— tap to build your shopping list
+              </Text>
+              <Text style={[styles.lowStockLink, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>List →</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -1067,6 +1098,55 @@ export default function PantryScreen() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
+
+      {/* ── LOW STOCK SHOPPING LIST MODAL ── */}
+      <Modal
+        visible={showLowStockModal}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setShowLowStockModal(false)}
+      >
+        <View style={[styles.sheet, { backgroundColor: isDark ? "#141210" : "#fff" }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: isDark ? "#333" : "#E5E7EB" }]} />
+          <Text style={[styles.sheetTitle, { color: isDark ? "#F0EDE8" : "#0F1C2E", fontFamily: "Fraunces_700Bold" }]}>
+            Shopping List 🛒
+          </Text>
+          <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? "#9E9E9E" : "#6B7280", fontFamily: "Inter_400Regular" }}>
+            {lowStockItems.length} item{lowStockItems.length !== 1 ? "s" : ""} running low in your pantry
+          </Text>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingBottom: 24 }}>
+            {lowStockItems.map((item) => (
+              <View
+                key={item.id}
+                style={{
+                  flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 14, borderWidth: 1,
+                  backgroundColor: isDark ? "#1A1714" : "#F9FAFB",
+                  borderColor: isDark ? "#2A2724" : "#E5E7EB",
+                }}
+              >
+                <Text style={{ fontSize: 22 }}>{item.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, color: isDark ? "#F0EDE8" : "#0F1C2E", fontFamily: "Inter_600SemiBold" }}>
+                    {item.name}
+                  </Text>
+                  <Text style={{ fontSize: 12, marginTop: 2, color: isDark ? "#9E9E9E" : "#6B7280", fontFamily: "Inter_400Regular" }}>
+                    Only {item.quantity} {item.unit} left · {item.category}
+                  </Text>
+                </View>
+                <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: "#E8452022" }}>
+                  <Text style={{ fontSize: 11, color: "#E84040", fontFamily: "Inter_500Medium" }}>Low</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+          <TouchableOpacity
+            style={{ paddingVertical: 16, borderRadius: 14, alignItems: "center", backgroundColor: colors.primary }}
+            onPress={() => setShowLowStockModal(false)}
+          >
+            <Text style={{ fontSize: 16, color: "#fff", fontFamily: "Inter_700Bold" }}>Got It</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1103,6 +1183,18 @@ const styles = StyleSheet.create({
   },
   expiryAlertText: { flex: 1, fontSize: 13, color: "#EF4444" },
   expiryViewLink: { fontSize: 13 },
+  lowStockBanner: {
+    flexDirection: "row", marginHorizontal: 16, marginBottom: 10,
+    borderRadius: 12, overflow: "hidden",
+    backgroundColor: "#FFF1F0", borderWidth: 1, borderColor: "#FECACA",
+  },
+  lowStockAccent: { width: 4, backgroundColor: "#E84040" },
+  lowStockBody: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    gap: 8, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  lowStockText: { flex: 1, fontSize: 13, color: "#78180F" },
+  lowStockLink: { fontSize: 13 },
   categoriesContainer: { paddingHorizontal: 16, gap: 8, paddingBottom: 10, alignItems: "center", height: 50 },
   categoryTab: { height: 34, paddingHorizontal: 16, borderRadius: 999, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   categoryTabText: { fontSize: 13 },

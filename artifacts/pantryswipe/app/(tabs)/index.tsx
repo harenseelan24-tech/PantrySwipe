@@ -52,6 +52,12 @@ const SEARCH_VARIANTS: { label: string; subtitle: string; recipeId: string }[] =
   { label: "Overnight Oats", subtitle: "Meal prep · 420 kcal", recipeId: "10" },
 ];
 
+const MEAL_TYPE_FILTERS: Record<string, (r: Recipe) => boolean> = {
+  Breakfast: (r) => r.calories < 500 || r.tags.some((t) => ["breakfast", "brunch", "morning", "oats", "eggs"].includes(t.toLowerCase())),
+  Lunch: (r) => r.tags.some((t) => ["lunch", "salad", "sandwich", "soup", "light", "bowl"].includes(t.toLowerCase())) || (r.calories >= 300 && r.calories <= 700),
+  Dinner: (r) => r.calories > 500 || r.tags.some((t) => ["dinner", "main", "supper", "hearty", "pasta", "steak"].includes(t.toLowerCase())),
+};
+
 // ── Tutorial step definitions ──
 const TUTORIAL_STEPS = [
   {
@@ -128,6 +134,10 @@ export default function HomeScreen() {
   const [saveToast, setSaveToast] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeMealType, setActiveMealType] = useState<"Breakfast" | "Lunch" | "Dinner" | null>(null);
+  const [showServingsModal, setShowServingsModal] = useState(false);
+  const [pendingSwipeRecipe, setPendingSwipeRecipe] = useState<Recipe | null>(null);
+  const [selectedServings, setSelectedServings] = useState(2);
 
   // ── Tutorial state ──
   const [showTutorial, setShowTutorial] = useState(false);
@@ -271,9 +281,13 @@ export default function HomeScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     triggerParticles("right");
     const recipe = filteredRecipes[currentIndex];
-    setTimeout(() => { if (recipe) router.push(`/recipe/${recipe.id}`); }, 350);
     setCurrentIndex((prev) => Math.min(prev + 1, filteredRecipes.length));
-  }, [filteredRecipes, currentIndex, router, triggerParticles]);
+    if (recipe) {
+      setPendingSwipeRecipe(recipe);
+      setSelectedServings(2);
+      setShowServingsModal(true);
+    }
+  }, [filteredRecipes, currentIndex, triggerParticles]);
 
   const handleSwipeUp = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -288,6 +302,7 @@ export default function HomeScreen() {
     setFilteredRecipes(liveRecipes);
     setCurrentIndex(0);
     setActiveMood(null);
+    setActiveMealType(null);
   }, [liveRecipes]);
 
   const searchResults = SEARCH_VARIANTS.filter((v) =>
@@ -373,6 +388,44 @@ export default function HomeScreen() {
           );
         })}
       </ScrollView>
+
+      {/* ── MEAL TYPE FILTER ── */}
+      <View style={styles.mealTypeStrip}>
+        {(["🌅 Breakfast", "☀️ Lunch", "🌙 Dinner"] as const).map((label) => {
+          const type = label.split(" ")[1] as "Breakfast" | "Lunch" | "Dinner";
+          const isActive = activeMealType === type;
+          return (
+            <TouchableOpacity
+              key={type}
+              style={[
+                styles.mealTypePill,
+                isActive
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                const next = isActive ? null : type;
+                setActiveMealType(next);
+                setActiveMood(null);
+                if (next) {
+                  const f = MEAL_TYPE_FILTERS[next];
+                  const r = liveRecipes.filter(f);
+                  setFilteredRecipes(r.length >= 3 ? r : liveRecipes);
+                } else {
+                  setFilteredRecipes(liveRecipes);
+                }
+                setCurrentIndex(0);
+              }}
+            >
+              <Text style={styles.mealTypePillEmoji}>{label.split(" ")[0]}</Text>
+              <Text style={[styles.mealTypePillText, { color: isActive ? "#fff" : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" }]}>
+                {type}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       {/* ── SMART BANNER ── */}
       {expiringItems.length > 0 ? (
@@ -618,6 +671,61 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── SERVINGS PICKER MODAL ── */}
+      <Modal visible={showServingsModal} transparent animationType="slide" onRequestClose={() => setShowServingsModal(false)}>
+        <View style={styles.servingsOverlay}>
+          <View style={[styles.servingsSheet, { backgroundColor: colors.background }]}>
+            <View style={[styles.servingsHandle, { backgroundColor: colors.border }]} />
+            <Text style={[styles.servingsTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>
+              How many people? 👨‍🍳
+            </Text>
+            <Text style={[styles.servingsSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
+              {pendingSwipeRecipe?.title}
+            </Text>
+            <View style={styles.servingsBtnRow}>
+              {[1, 2, 3, 4, 5, 6, 8].map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={[
+                    styles.servingsNumBtn,
+                    {
+                      backgroundColor: selectedServings === n ? colors.primary : colors.card,
+                      borderColor: selectedServings === n ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedServings(n); }}
+                >
+                  <Text style={[styles.servingsNumText, { color: selectedServings === n ? "#fff" : colors.foreground, fontFamily: selectedServings === n ? "Inter_700Bold" : "Inter_500Medium" }]}>
+                    {n}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[styles.servingsCookBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setShowServingsModal(false);
+                if (pendingSwipeRecipe) {
+                  router.push(`/recipe/${pendingSwipeRecipe.id}?servings=${selectedServings}&mealType=${activeMealType ?? "Dinner"}`);
+                }
+              }}
+            >
+              <Text style={[styles.servingsCookBtnText, { fontFamily: "Inter_700Bold" }]}>
+                Let's Cook! 🍳
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ paddingVertical: 12, alignItems: "center" }}
+              onPress={() => setShowServingsModal(false)}
+            >
+              <Text style={[{ fontSize: 14, fontFamily: "Inter_400Regular" }, { color: colors.textMuted }]}>
+                Skip for now
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -674,6 +782,27 @@ const styles = StyleSheet.create({
     borderWidth: 1, alignItems: "center", justifyContent: "center",
   },
   moodChipText: { fontSize: 13 },
+
+  // ── Meal type filter ──
+  mealTypeStrip: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 6 },
+  mealTypePill: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 9, borderRadius: 12, borderWidth: 1,
+  },
+  mealTypePillEmoji: { fontSize: 13 },
+  mealTypePillText: { fontSize: 12 },
+
+  // ── Servings modal ──
+  servingsOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
+  servingsSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 44 },
+  servingsHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
+  servingsTitle: { fontSize: 24, letterSpacing: -0.3, marginBottom: 6, textAlign: "center" },
+  servingsSub: { fontSize: 14, textAlign: "center", marginBottom: 24 },
+  servingsBtnRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24, justifyContent: "center" },
+  servingsNumBtn: { width: 56, height: 56, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  servingsNumText: { fontSize: 20 },
+  servingsCookBtn: { paddingVertical: 16, borderRadius: 14, alignItems: "center", marginBottom: 4 },
+  servingsCookBtnText: { fontSize: 16, color: "#fff" },
 
   // ── Expiry banner ──
   expiryBannerWrap: {

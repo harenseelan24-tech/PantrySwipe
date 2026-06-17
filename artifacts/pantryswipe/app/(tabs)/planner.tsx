@@ -57,7 +57,7 @@ export default function PlannerScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { pantryItems, cookedRecipes } = useApp();
+  const { cookedRecipes, cookingHistory, liveRecipes } = useApp();
 
   const [view, setView] = useState<ViewType>("Week");
   const [mealPlan, setMealPlan] = useState<MealPlan>(EMPTY_PLAN);
@@ -65,25 +65,27 @@ export default function PlannerScreen() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [activeMealType, setActiveMealType] = useState<MealType | null>(null);
   const [selectedMeal, setSelectedMeal] = useState<{ day: string; meal: MealType; recipeId: string } | null>(null);
-  const [showShoppingList, setShowShoppingList] = useState(false);
+  const [noHistoryMsg, setNoHistoryMsg] = useState("");
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const weekDates = getWeekDates(weekOffset);
 
-  // Stats from actual cooked/recorded meals (not the plan)
+  const allRecipes = useMemo(() => [...MOCK_RECIPES, ...liveRecipes], [liveRecipes]);
+  const findRecipe = (id: string | null) => id ? allRecipes.find(r => r.id === id) ?? null : null;
+
   const { cookedKcalPerDay, totalCookedMeals } = useMemo(() => {
     let cals = 0;
     cookedRecipes.forEach((id) => {
-      const r = MOCK_RECIPES.find((r) => r.id === id);
+      const r = findRecipe(id);
       if (r) cals += r.calories;
     });
     return {
       cookedKcalPerDay: cookedRecipes.length > 0 ? Math.round(cals / 7) : 0,
       totalCookedMeals: cookedRecipes.length,
     };
-  }, [cookedRecipes]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cookedRecipes, liveRecipes]);
 
-  // Count planned meals in current plan
   const plannedCount = useMemo(() => {
     let count = 0;
     Object.values(mealPlan).forEach((day) => Object.values(day).forEach((id) => { if (id) count++; }));
@@ -92,41 +94,48 @@ export default function PlannerScreen() {
 
   const isPlanEmpty = plannedCount === 0;
 
-  // Shopping list: ingredients from plan not in pantry
-  const shoppingList = useMemo(() => {
-    const needed: { name: string; amount: string; recipe: string }[] = [];
-    const pantryNames = pantryItems.map((p) => p.name.toLowerCase());
-    Object.values(mealPlan).forEach((day) => {
-      Object.values(day).forEach((id) => {
-        if (id) {
-          const r = MOCK_RECIPES.find((r) => r.id === id);
-          r?.ingredients.filter((i) => !i.inPantry && !pantryNames.some((p) => p.includes(i.name.toLowerCase()))).forEach((i) => {
-            if (!needed.find((n) => n.name === i.name)) {
-              needed.push({ name: i.name, amount: i.amount, recipe: r.title });
-            }
-          });
-        }
-      });
-    });
-    return needed;
-  }, [mealPlan, pantryItems]);
-
-  const handleGenerate = () => {
+  /** Auto-fill from real cooking history for the displayed week. */
+  const handleAutoFill = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setGenerating(true);
+
     setTimeout(() => {
-      const shuffled = [...MOCK_RECIPES].sort(() => Math.random() - 0.5);
-      const newPlan: MealPlan = {};
-      DAYS_SHORT.forEach((day, i) => {
-        newPlan[day] = {
-          Breakfast: shuffled[(i * 3) % shuffled.length]?.id || null,
-          Lunch: shuffled[(i * 3 + 1) % shuffled.length]?.id || null,
-          Dinner: shuffled[(i * 3 + 2) % shuffled.length]?.id || null,
-        };
+      const weekDateStrings = weekDates.map((d) => d.toISOString().split("T")[0]);
+
+      if (cookingHistory.length === 0) {
+        setGenerating(false);
+        setNoHistoryMsg("Cook some meals first — your history will fill in here automatically!");
+        setTimeout(() => setNoHistoryMsg(""), 3500);
+        return;
+      }
+
+      const newPlan: MealPlan = JSON.parse(JSON.stringify(EMPTY_PLAN));
+
+      cookingHistory.forEach((entry) => {
+        const weekIdx = weekDateStrings.indexOf(entry.date);
+        if (weekIdx === -1) return;
+        const dayKey = DAYS_SHORT[weekIdx];
+        if (!dayKey) return;
+        if (!newPlan[dayKey][entry.mealType]) {
+          const exists = findRecipe(entry.recipeId);
+          if (exists) newPlan[dayKey][entry.mealType] = entry.recipeId;
+        }
       });
+
+      const filled = Object.values(newPlan).reduce(
+        (sum, day) => sum + Object.values(day).filter(Boolean).length, 0
+      );
+
+      if (filled === 0) {
+        setGenerating(false);
+        setNoHistoryMsg("No meals cooked this week yet. Cook something and come back!");
+        setTimeout(() => setNoHistoryMsg(""), 3500);
+        return;
+      }
+
       setMealPlan(newPlan);
       setGenerating(false);
-    }, 1200);
+    }, 600);
   };
 
   const removeFromPlan = (day: string, meal: MealType) => {
@@ -136,7 +145,7 @@ export default function PlannerScreen() {
 
   const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
   const todayKey = DAYS_SHORT[todayIndex] || "Mon";
-  const selectedRecipe = selectedMeal ? MOCK_RECIPES.find((r) => r.id === selectedMeal.recipeId) : null;
+  const selectedRecipe = selectedMeal ? findRecipe(selectedMeal.recipeId) : null;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -148,15 +157,25 @@ export default function PlannerScreen() {
         </View>
         <TouchableOpacity
           style={[styles.generateBtn, { backgroundColor: generating ? colors.muted : colors.primary }]}
-          onPress={handleGenerate}
+          onPress={handleAutoFill}
           disabled={generating}
         >
           <Feather name="zap" size={15} color={generating ? colors.textMuted : colors.primaryForeground} />
           <Text style={[styles.generateBtnText, { color: generating ? colors.textMuted : colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>
-            {generating ? "Generating…" : "Auto-Fill"}
+            {generating ? "Filling…" : "Auto-Fill"}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* No-history toast */}
+      {noHistoryMsg.length > 0 && (
+        <View style={[styles.noHistoryBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Feather name="info" size={14} color={colors.textSecondary} />
+          <Text style={[styles.noHistoryText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+            {noHistoryMsg}
+          </Text>
+        </View>
+      )}
 
       {/* View toggle */}
       <View style={[styles.viewToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -183,7 +202,7 @@ export default function PlannerScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats — based on what you've actually eaten/recorded */}
+        {/* Stats */}
         <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Feather name="zap" size={16} color={colors.primary} />
@@ -227,12 +246,12 @@ export default function PlannerScreen() {
             <Text style={[styles.dayViewTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Today — {DAYS_FULL[todayIndex]}</Text>
             {(activeMealType ? [activeMealType] : MEALS).map((meal) => {
               const recipeId = mealPlan[todayKey]?.[meal];
-              const recipe = recipeId ? MOCK_RECIPES.find((r) => r.id === recipeId) : null;
+              const recipe = recipeId ? findRecipe(recipeId) : null;
               return (
                 <TouchableOpacity
                   key={meal}
                   style={[styles.dayMealRow, { backgroundColor: colors.card, borderColor: recipe ? colors.primary + "50" : colors.border }]}
-                  onPress={() => { if (recipe) setSelectedMeal({ day: todayKey, meal, recipeId: recipeId! }); }}
+                  onPress={() => { if (recipe && recipeId) setSelectedMeal({ day: todayKey, meal, recipeId }); }}
                 >
                   <View style={[styles.dayMealIcon, { backgroundColor: colors.primary + "15" }]}>
                     <Text style={{ fontSize: 16 }}>{MEAL_EMOJI[meal]}</Text>
@@ -242,7 +261,7 @@ export default function PlannerScreen() {
                     {recipe ? (
                       <Text style={[styles.dayMealName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>{recipe.title}</Text>
                     ) : (
-                      <Text style={[styles.dayMealEmpty, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Tap Auto-Fill or add manually</Text>
+                      <Text style={[styles.dayMealEmpty, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Cook a meal to fill this slot</Text>
                     )}
                   </View>
                   {recipe && <Text style={[styles.dayMealCals, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal</Text>}
@@ -256,22 +275,21 @@ export default function PlannerScreen() {
         {/* ── WEEK VIEW ── */}
         {view === "Week" && (
           <>
-            {/* New user empty state */}
             {isPlanEmpty && (
               <View style={[styles.emptyState, { backgroundColor: colors.primary + "0D", borderColor: colors.primary + "30" }]}>
                 <Text style={styles.emptyStateEmoji}>🗓️</Text>
                 <Text style={[styles.emptyStateTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Your week is wide open</Text>
                 <Text style={[styles.emptyStateText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                  Hit <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>Auto-Fill</Text> above and we'll build a full week of meals from your pantry — then generate a shopping list for anything you're missing.
+                  Cook meals and tap <Text style={{ fontFamily: "Inter_700Bold", color: colors.primary }}>Auto-Fill</Text> above — we'll fill in everything you've actually cooked this week.
                 </Text>
                 <TouchableOpacity
                   style={[styles.emptyStateCTA, { backgroundColor: colors.primary }]}
-                  onPress={handleGenerate}
+                  onPress={handleAutoFill}
                   disabled={generating}
                 >
                   <Feather name="zap" size={15} color="#fff" />
                   <Text style={[styles.emptyStateCTAText, { fontFamily: "Inter_700Bold" }]}>
-                    {generating ? "Generating…" : "Auto-Fill My Week"}
+                    {generating ? "Filling…" : "Auto-Fill My Week"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -290,12 +308,12 @@ export default function PlannerScreen() {
                       </View>
                       {(activeMealType ? [activeMealType] : MEALS).map((meal) => {
                         const recipeId = mealPlan[day]?.[meal];
-                        const recipe = recipeId ? MOCK_RECIPES.find((r) => r.id === recipeId) : null;
+                        const recipe = recipeId ? findRecipe(recipeId) : null;
                         return (
                           <TouchableOpacity
                             key={meal}
                             style={[styles.mealCell, { backgroundColor: recipe ? colors.primary + "12" : colors.card, borderColor: recipe ? colors.primary + "40" : colors.border }]}
-                            onPress={() => recipe ? setSelectedMeal({ day, meal, recipeId: recipeId! }) : undefined}
+                            onPress={() => recipe && recipeId ? setSelectedMeal({ day, meal, recipeId }) : undefined}
                             onLongPress={() => recipe ? removeFromPlan(day, meal) : undefined}
                           >
                             {recipe ? (
@@ -346,23 +364,6 @@ export default function PlannerScreen() {
             </View>
           </View>
         )}
-
-        {/* Shopping list CTA */}
-        <TouchableOpacity
-          style={[styles.shoppingCTA, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowShoppingList(true); }}
-        >
-          <View style={[styles.shoppingCTAIcon, { backgroundColor: colors.primary + "15" }]}>
-            <Feather name="shopping-cart" size={22} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.shoppingCTATitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Shopping List</Text>
-            <Text style={[styles.shoppingCTASub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-              {shoppingList.length > 0 ? `${shoppingList.length} item${shoppingList.length !== 1 ? "s" : ""} needed from your plan` : "Everything's in your pantry!"}
-            </Text>
-          </View>
-          <Feather name="chevron-right" size={18} color={colors.textMuted} />
-        </TouchableOpacity>
       </ScrollView>
 
       {/* ── Meal Detail Modal ── */}
@@ -402,40 +403,6 @@ export default function PlannerScreen() {
           )}
         </View>
       </Modal>
-
-      {/* ── Shopping List Modal ── */}
-      <Modal visible={showShoppingList} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowShoppingList(false)}>
-        <View style={[styles.modal, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Fraunces_700Bold" }]}>Shopping List 🛒</Text>
-          <Text style={[styles.shoppingSubtitle, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-            Based on your week plan · {shoppingList.length} items needed
-          </Text>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 24 }}>
-            {shoppingList.length === 0 ? (
-              <View style={styles.shoppingEmpty}>
-                <Text style={{ fontSize: 40 }}>✅</Text>
-                <Text style={[styles.shoppingEmptyText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-                  You have everything you need!
-                </Text>
-              </View>
-            ) : (
-              shoppingList.map((item, i) => (
-                <View key={i} style={[styles.shoppingItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <View style={[styles.shoppingCheck, { borderColor: colors.border }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.shoppingItemName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{item.name}</Text>
-                    <Text style={[styles.shoppingItemDetail, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{item.amount} · for {item.recipe}</Text>
-                  </View>
-                </View>
-              ))
-            )}
-          </ScrollView>
-          <TouchableOpacity style={[styles.modalBtnFull, { backgroundColor: colors.primary }]} onPress={() => setShowShoppingList(false)}>
-            <Text style={[styles.modalBtnText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -447,6 +414,8 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, marginTop: 2 },
   generateBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 100 },
   generateBtnText: { fontSize: 13 },
+  noHistoryBanner: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginBottom: 8, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
+  noHistoryText: { flex: 1, fontSize: 12, lineHeight: 17 },
   viewToggle: { flexDirection: "row", marginHorizontal: 20, borderRadius: 12, padding: 3, marginBottom: 16, borderWidth: 1 },
   viewBtn: { flex: 1, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 10 },
   viewBtnText: { fontSize: 13 },
@@ -462,7 +431,6 @@ const styles = StyleSheet.create({
   mealTypePill: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9, borderRadius: 12, borderWidth: 1 },
   mealTypePillText: { fontSize: 12 },
 
-  // Empty state
   emptyState: { borderRadius: 18, borderWidth: 1, padding: 24, alignItems: "center", gap: 10, marginBottom: 16 },
   emptyStateEmoji: { fontSize: 44 },
   emptyStateTitle: { fontSize: 20, letterSpacing: -0.3 },
@@ -497,14 +465,8 @@ const styles = StyleSheet.create({
   monthDayNum: { fontSize: 13 },
   monthDot: { width: 4, height: 4, borderRadius: 2 },
 
-  shoppingCTA: { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, borderRadius: 16, borderWidth: 1, marginTop: 8 },
-  shoppingCTAIcon: { width: 48, height: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  shoppingCTATitle: { fontSize: 15 },
-  shoppingCTASub: { fontSize: 13, marginTop: 2 },
-
   modal: { flex: 1, padding: 24 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
-  modalTitle: { fontSize: 24, letterSpacing: -0.3, marginBottom: 6 },
   mealDetailMealType: { fontSize: 13, marginBottom: 4 },
   mealDetailTitle: { fontSize: 26, letterSpacing: -0.4, marginBottom: 18 },
   mealDetailStats: { flexDirection: "row", gap: 10, marginBottom: 24 },
@@ -514,14 +476,4 @@ const styles = StyleSheet.create({
   mealDetailBtns: { flexDirection: "row", gap: 12 },
   mealDetailBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14 },
   mealDetailBtnText: { fontSize: 15 },
-
-  shoppingSubtitle: { fontSize: 14, marginBottom: 16 },
-  shoppingEmpty: { alignItems: "center", paddingVertical: 40, gap: 12 },
-  shoppingEmptyText: { fontSize: 15, textAlign: "center" },
-  shoppingItem: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 12, borderWidth: 1 },
-  shoppingCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5 },
-  shoppingItemName: { fontSize: 15 },
-  shoppingItemDetail: { fontSize: 12, marginTop: 2 },
-  modalBtnFull: { paddingVertical: 16, borderRadius: 14, alignItems: "center" },
-  modalBtnText: { fontSize: 16 },
 });
