@@ -19,6 +19,7 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import SwipeCard from "@/components/SwipeCard";
 import { useColors } from "@/hooks/useColors";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useApp } from "@/context/AppContext";
 import { Recipe } from "@/data/mockData";
 
@@ -105,6 +106,7 @@ const TAB_BAR_H = Platform.OS === "web" ? 68 : 60;
 
 export default function HomeScreen() {
   const colors = useColors();
+  const { unreadCount } = useNotifications();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { userProfile, getPantryMatchScore, saveRecipe, pantryItems, liveRecipes } = useApp();
@@ -336,7 +338,11 @@ export default function HomeScreen() {
             onPress={() => router.push("/notifications")}
           >
             <Feather name="bell" size={18} color={colors.primary} />
-            <View style={[styles.notifDot, { backgroundColor: "#EF4444" }]} />
+            {unreadCount > 0 && (
+              <View style={[styles.notifBadge, { backgroundColor: "#EF4444" }]}>
+                <Text style={styles.notifBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -709,11 +715,11 @@ export default function HomeScreen() {
                   borderColor: customServingMode ? colors.primary : colors.border,
                   flexDirection: "row", width: "auto" as any, paddingHorizontal: 14, gap: 5,
                 }]}
-                onPress={() => { setCustomServingMode(true); setCustomServingInput(String(selectedServings)); }}
+                onPress={() => { setCustomServingMode(true); setCustomServingInput(""); }}
               >
                 <Feather name="edit-2" size={14} color={customServingMode ? "#fff" : colors.textMuted} />
                 <Text style={[styles.servingsNumText, { color: customServingMode ? "#fff" : colors.textMuted }]}>
-                  {customServingMode ? selectedServings : "Custom"}
+                  {customServingMode && customServingInput ? customServingInput : "Custom"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -790,6 +796,13 @@ const styles = StyleSheet.create({
     position: "absolute", top: 8, right: 8,
     width: 7, height: 7, borderRadius: 3.5,
   },
+  notifBadge: {
+    position: "absolute", top: 5, right: 5,
+    minWidth: 17, height: 17, borderRadius: 9,
+    alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold" },
   avatar: {
     width: 40, height: 40, borderRadius: 20,
     alignItems: "center", justifyContent: "center",

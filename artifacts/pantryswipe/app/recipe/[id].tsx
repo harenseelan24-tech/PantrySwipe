@@ -862,11 +862,11 @@ export default function RecipeDetailScreen() {
                   borderColor: customServingsMode ? colors.saffron : colors.border,
                   flexDirection: "row", width: "auto" as any, paddingHorizontal: 14, gap: 5,
                 }]}
-                onPress={() => { setCustomServingsMode(true); setCustomServingsInput(String(selectedServings)); }}
+                onPress={() => { setCustomServingsMode(true); setCustomServingsInput(""); }}
               >
                 <Feather name="edit-2" size={14} color={customServingsMode ? "#fff" : colors.mutedForeground} />
                 <Text style={[styles.servingsNumText, { color: customServingsMode ? "#fff" : colors.mutedForeground }]}>
-                  {customServingsMode ? selectedServings : "Custom"}
+                  {customServingsMode && customServingsInput ? customServingsInput : "Custom"}
                 </Text>
               </TouchableOpacity>
             </View>

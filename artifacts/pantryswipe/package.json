@@ -59,6 +59,7 @@
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "expo-camera": "^17.0.10",
-    "expo-image-manipulator": "^56.0.19"
+    "expo-image-manipulator": "^56.0.19",
+    "expo-notifications": "^56.0.18"
   }
 }
