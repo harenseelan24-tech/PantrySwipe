@@ -480,16 +480,16 @@ export default function HomeScreen() {
       {/* ── INGREDIENT FILTER BANNER ── */}
       {activeIngredient && (
         <TouchableOpacity
-          style={[styles.ingredientBanner, { backgroundColor: colors.secondary + "18", borderColor: colors.secondary + "40" }]}
+          style={[styles.ingredientBanner, { backgroundColor: colors.herbGreen + "20", borderColor: colors.herbGreen + "45" }]}
           onPress={resetCards}
           activeOpacity={0.7}
         >
           <Text style={{ fontSize: 15 }}>🌿</Text>
-          <Text style={[styles.ingredientBannerText, { color: colors.secondary, fontFamily: "Inter_500Medium" }]}>
+          <Text style={[styles.ingredientBannerText, { color: colors.herbGreen, fontFamily: "Inter_500Medium" }]}>
             Showing recipes with{" "}
             <Text style={{ fontFamily: "Inter_700Bold" }}>{activeIngredient}</Text>
           </Text>
-          <Feather name="x" size={14} color={colors.secondary} />
+          <Feather name="x" size={14} color={colors.herbGreen} />
         </TouchableOpacity>
       )}
 
