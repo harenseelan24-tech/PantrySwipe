@@ -1,0 +1,31 @@
+kind = "slides"
+previewPath = "/pantryswipe-pitch/"
+title = "PantrySwipe Pitch Deck"
+version = "1.0.0"
+id = "artifacts/pantryswipe-pitch"
+router = "path"
+
+[[integratedSkills]]
+name = "slides"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/pantryswipe-pitch/" ]
+localPort = 22753
+
+[services.development]
+run = "pnpm --filter @workspace/pantryswipe-pitch run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pantryswipe-pitch", "run", "build" ]
+publicDir = "artifacts/pantryswipe-pitch/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22753"
+BASE_PATH = "/pantryswipe-pitch/"

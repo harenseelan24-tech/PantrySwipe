@@ -24,3 +24,15 @@ id = "CTF3SIP23a1_WfaerWdvY"
 uri = "file://artifacts/pantryswipe/assets/images/recipe-bibimbap.png"
 type = "image"
 title = "bibimbap recipe card"
+
+[[generated]]
+id = "J-x9A4sa9zZm2pnza-nLH"
+uri = "file://artifacts/pantryswipe-pitch/public/phone-mockup.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "WMyooxFBfGE3zkhQqX4NT"
+uri = "file://artifacts/pantryswipe-pitch/public/bg-texture.png"
+type = "image"
+title = "generated_image"
