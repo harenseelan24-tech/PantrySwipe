@@ -61,27 +61,29 @@ export default function WelcomeScreen() {
             <Text style={styles.logoEmoji}>🍳</Text>
           </View>
 
-          <TextType
-            key={`title-${screenKey}`}
-            text="PantrySwipe"
-            typingSpeed={90}
-            loop={false}
-            showCursor={true}
-            cursorCharacter="|"
-            cursorBlinkDuration={0.5}
-            style={styles.appName}
-          />
+          <View style={{ alignItems: "center", gap: 4 }}>
+            <TextType
+              key={`title-${screenKey}`}
+              text="PantrySwipe"
+              typingSpeed={90}
+              loop={false}
+              showCursor={true}
+              cursorCharacter="|"
+              cursorBlinkDuration={0.5}
+              style={styles.appName}
+            />
 
-          <DecryptedText
-            key={`tagline-${screenKey}`}
-            text="Cook what you already have."
-            animateOn="view"
-            speed={55}
-            maxIterations={14}
-            sequential={true}
-            revealDirection="start"
-            style={styles.tagline}
-          />
+            <DecryptedText
+              key={`tagline-${screenKey}`}
+              text="Cook what you already have."
+              animateOn="view"
+              speed={120}
+              maxIterations={14}
+              sequential={true}
+              revealDirection="start"
+              style={styles.tagline}
+            />
+          </View>
         </View>
 
         <View style={styles.ctaContainer}>

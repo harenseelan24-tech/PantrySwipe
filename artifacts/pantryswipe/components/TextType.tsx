@@ -31,7 +31,10 @@ export function TextType({
   const [currentCharIndex, setCurrentCharIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
+  const [isComplete, setIsComplete] = useState(false);
+  const isCompleteRef = useRef(false);
   const cursorOpacity = useRef(new Animated.Value(1)).current;
+  const blinkRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     const blink = Animated.loop(
@@ -48,9 +51,17 @@ export function TextType({
         }),
       ])
     );
+    blinkRef.current = blink;
     blink.start();
     return () => blink.stop();
   }, []);
+
+  useEffect(() => {
+    if (isComplete) {
+      blinkRef.current?.stop();
+      cursorOpacity.setValue(0);
+    }
+  }, [isComplete]);
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -82,6 +93,12 @@ export function TextType({
         timeout = setTimeout(() => {
           setIsDeleting(true);
         }, pauseDuration);
+      } else {
+        // Typing finished — hide cursor
+        if (!isCompleteRef.current) {
+          isCompleteRef.current = true;
+          setIsComplete(true);
+        }
       }
     }
 

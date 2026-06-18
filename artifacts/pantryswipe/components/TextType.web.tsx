@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 let cursorStyleInjected = false;
 function injectCursorStyle() {
@@ -48,6 +48,8 @@ export function TextType({
   const [currentCharIndex, setCurrentCharIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
+  const [isComplete, setIsComplete] = useState(false);
+  const isCompleteRef = useRef(false);
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -79,6 +81,12 @@ export function TextType({
         timeout = setTimeout(() => {
           setIsDeleting(true);
         }, pauseDuration);
+      } else {
+        // Typing finished — hide cursor
+        if (!isCompleteRef.current) {
+          isCompleteRef.current = true;
+          setIsComplete(true);
+        }
       }
     }
 
@@ -86,11 +94,12 @@ export function TextType({
   }, [currentCharIndex, displayedText, isDeleting, currentTextIndex]);
 
   const css = style as React.CSSProperties;
+  const cursorVisible = showCursor && !isComplete;
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "baseline" }}>
+    <div style={{ display: "inline-flex", justifyContent: "center", alignItems: "baseline" }}>
       <span style={css}>{displayedText}</span>
-      {showCursor && (
+      {cursorVisible && (
         <span
           style={{
             ...css,
