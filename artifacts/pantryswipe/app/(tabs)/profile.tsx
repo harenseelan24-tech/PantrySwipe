@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -60,6 +60,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { userProfile, stats, savedRecipes, cookedRecipes, liveRecipes } = useApp();
   const { isSubscribed } = useSubscription();
+  const scrollRef = useRef<ScrollView>(null);
   const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Recipes");
   const [recipeSubtab, setRecipeSubtab] = useState<(typeof RECIPE_SUBTABS)[number]>("Saved Later");
   const [showAllergies, setShowAllergies] = useState(false);
@@ -76,7 +77,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView showsVerticalScrollIndicator={false} stickyHeaderIndices={[1]}>
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} stickyHeaderIndices={[1]}>
         {/* Profile Header */}
         <View style={[styles.profileHeader, { paddingTop: topPadding }]}>
           {/* Cover */}
@@ -202,7 +203,7 @@ export default function ProfileScreen() {
             ) : null}
 
             <View style={styles.statsRow}>
-              <TouchableOpacity style={styles.statItem} onPress={() => { setActiveTab("Recipes"); setRecipeSubtab("Made"); }}>
+              <TouchableOpacity style={styles.statItem} onPress={() => { setActiveTab("Recipes"); setRecipeSubtab("Made"); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}>
                 <Text style={[styles.statValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{cookedRecipes.length}</Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Cooked</Text>
               </TouchableOpacity>
@@ -255,7 +256,7 @@ export default function ProfileScreen() {
                       borderColor: isActive ? colors.primary : colors.border,
                     },
                   ]}
-                  onPress={() => setActiveTab(tab)}
+                  onPress={() => { setActiveTab(tab); scrollRef.current?.scrollTo({ y: 0, animated: false }); }}
                 >
                   <Text style={[styles.tabText, { color: isActive ? "#fff" : colors.textSecondary, fontFamily: isActive ? "Inter_700Bold" : "Inter_500Medium" }]}>
                     {tab}
