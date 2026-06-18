@@ -12,7 +12,13 @@ import request from "supertest";
 
 vi.mock("@workspace/db", () => ({
   db: {
-    execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+    execute: vi.fn().mockResolvedValue({
+      rows: [{ "?column?": 1 }],
+      command: "SELECT",
+      rowCount: 1,
+      oid: 0,
+      fields: [],
+    }),
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn(() => ({
@@ -44,9 +50,17 @@ vi.mock("@workspace/integrations-anthropic-ai", () => ({
 import app from "../app.js";
 import { db } from "@workspace/db";
 
+const healthyDbResult = {
+  rows: [{ "?column?": 1 }],
+  command: "SELECT",
+  rowCount: 1,
+  oid: 0,
+  fields: [],
+} as const;
+
 beforeEach(() => {
   // Reset the db.execute mock back to "healthy" before each test.
-  vi.mocked(db.execute).mockResolvedValue([{ "?column?": 1 }]);
+  vi.mocked(db.execute).mockResolvedValue(healthyDbResult as any);
 });
 
 // ── /api/healthz/live ────────────────────────────────────────────────────────
