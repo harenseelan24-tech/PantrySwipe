@@ -1,18 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-
-let cursorStyleInjected = false;
-function injectCursorStyle() {
-  if (cursorStyleInjected || typeof document === "undefined") return;
-  cursorStyleInjected = true;
-  const el = document.createElement("style");
-  el.textContent = `
-    @keyframes textTypeCursorBlink {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0; }
-    }
-  `;
-  document.head.appendChild(el);
-}
+import { Text, TextStyle, View } from "react-native";
 
 interface TextTypeProps {
   text: string | string[];
@@ -24,7 +11,7 @@ interface TextTypeProps {
   cursorCharacter?: string;
   cursorBlinkDuration?: number;
   initialDelay?: number;
-  style?: object;
+  style?: TextStyle;
 }
 
 export function TextType({
@@ -39,17 +26,22 @@ export function TextType({
   initialDelay = 0,
   style,
 }: TextTypeProps) {
-  useEffect(() => {
-    injectCursorStyle();
-  }, []);
-
   const textArray = Array.isArray(text) ? text : [text];
   const [displayedText, setDisplayedText] = useState("");
   const [currentCharIndex, setCurrentCharIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [currentTextIndex, setCurrentTextIndex] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [cursorVisible, setCursorVisible] = useState(true);
   const isCompleteRef = useRef(false);
+
+  useEffect(() => {
+    const id = setInterval(
+      () => setCursorVisible((v) => !v),
+      cursorBlinkDuration * 1000
+    );
+    return () => clearInterval(id);
+  }, [cursorBlinkDuration]);
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -78,11 +70,8 @@ export function TextType({
         (textArray.length > 1 || loop) &&
         !(currentTextIndex === textArray.length - 1 && !loop)
       ) {
-        timeout = setTimeout(() => {
-          setIsDeleting(true);
-        }, pauseDuration);
+        timeout = setTimeout(() => setIsDeleting(true), pauseDuration);
       } else {
-        // Typing finished — hide cursor
         if (!isCompleteRef.current) {
           isCompleteRef.current = true;
           setIsComplete(true);
@@ -93,22 +82,16 @@ export function TextType({
     return () => clearTimeout(timeout);
   }, [currentCharIndex, displayedText, isDeleting, currentTextIndex]);
 
-  const css = style as React.CSSProperties;
-  const cursorVisible = showCursor && !isComplete;
+  const showCursorNow = showCursor && !isComplete && cursorVisible;
 
   return (
-    <div style={{ display: "inline-flex", justifyContent: "center", alignItems: "baseline" }}>
-      <span style={css}>{displayedText}</span>
-      {cursorVisible && (
-        <span
-          style={{
-            ...css,
-            animation: `textTypeCursorBlink ${cursorBlinkDuration * 2}s ease-in-out infinite`,
-          }}
-        >
+    <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "baseline" }}>
+      <Text style={style}>{displayedText}</Text>
+      {showCursor && !isComplete && (
+        <Text style={[style, { opacity: showCursorNow ? 1 : 0 }]}>
           {cursorCharacter}
-        </span>
+        </Text>
       )}
-    </div>
+    </View>
   );
 }
