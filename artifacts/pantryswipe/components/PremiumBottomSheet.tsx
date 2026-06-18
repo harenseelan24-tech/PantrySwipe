@@ -13,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useSubscription } from "@/lib/revenuecat";
+import { ElectricBorder } from "@/components/ElectricBorder";
 
 const HERB = "#4CAF76";
 const SAFFRON = "#F5A623";
@@ -187,15 +188,17 @@ export function PremiumBottomSheet({ visible, usedCount, freeLimit, onDismiss }:
 
         {/* CTA */}
         <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <TouchableOpacity
-            style={[styles.ctaBtn, { backgroundColor: HERB, opacity: isPurchasing ? 0.7 : 1 }]}
-            onPress={handleUpgrade}
-            activeOpacity={0.88}
-            disabled={isPurchasing}
-          >
-            <Feather name="zap" size={17} color="#fff" />
-            <Text style={styles.ctaBtnText}>Unlock Premium</Text>
-          </TouchableOpacity>
+          <ElectricBorder color={HERB} speed={1.1} chaos={0.1} borderRadius={100}>
+            <TouchableOpacity
+              style={[styles.ctaBtn, { backgroundColor: HERB, opacity: isPurchasing ? 0.7 : 1 }]}
+              onPress={handleUpgrade}
+              activeOpacity={0.88}
+              disabled={isPurchasing}
+            >
+              <Feather name="zap" size={17} color="#fff" />
+              <Text style={styles.ctaBtnText}>Unlock Premium</Text>
+            </TouchableOpacity>
+          </ElectricBorder>
         </Animated.View>
 
         {/* Dismiss */}

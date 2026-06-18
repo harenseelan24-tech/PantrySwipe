@@ -15,6 +15,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
 import { useSubscription } from "@/lib/revenuecat";
+import { ElectricBorder } from "@/components/ElectricBorder";
 
 const HERB = "#4CAF76";
 const SAFFRON = "#F5A623";
@@ -181,19 +182,21 @@ export default function PaywallScreen() {
           </Text>
         </View>
 
-        {/* Price card */}
-        <View style={[styles.priceCard, { backgroundColor: HERB, shadowColor: HERB }]}>
-          <View style={styles.priceRow}>
-            <View>
-              <Text style={styles.priceLabel}>PantrySwipe Premium</Text>
-              <Text style={styles.priceSub}>Cancel anytime</Text>
-            </View>
-            <View style={styles.priceRight}>
-              <Text style={styles.priceAmount}>{price}</Text>
-              <Text style={styles.pricePer}>/month</Text>
+        {/* Price card — ElectricBorder glow */}
+        <ElectricBorder color={HERB} speed={0.75} chaos={0.12} borderRadius={16}>
+          <View style={[styles.priceCard, { backgroundColor: "#071A0D", shadowColor: HERB }]}>
+            <View style={styles.priceRow}>
+              <View>
+                <Text style={[styles.priceLabel, { color: "#fff" }]}>PantrySwipe Premium</Text>
+                <Text style={[styles.priceSub, { color: "rgba(255,255,255,0.6)" }]}>Cancel anytime</Text>
+              </View>
+              <View style={styles.priceRight}>
+                <Text style={[styles.priceAmount, { color: HERB }]}>{price}</Text>
+                <Text style={[styles.pricePer, { color: "rgba(255,255,255,0.6)" }]}>/month</Text>
+              </View>
             </View>
           </View>
-        </View>
+        </ElectricBorder>
 
         {/* Feature comparison */}
         <Text style={[styles.sectionLabel, { color: colors.textMuted, fontFamily: "Inter_600SemiBold" }]}>
