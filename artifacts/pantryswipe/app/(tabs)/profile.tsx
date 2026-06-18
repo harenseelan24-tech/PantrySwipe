@@ -294,24 +294,29 @@ export default function ProfileScreen() {
                 </View>
               ) : (
                 <View style={styles.recipeGrid}>
-                  {recipesList.map((recipe) => {
-                    const imgSrc = recipe.image
-                      ? recipe.image.startsWith("http") ? { uri: recipe.image } : (RECIPE_IMAGES[recipe.image] ?? null)
-                      : null;
-                    return (
-                    <TouchableOpacity key={recipe.id} style={[styles.recipeGridItem, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/recipe/${recipe.id}`)}>
-                      <View style={[styles.recipeGridImage, { backgroundColor: colors.primary + "20", overflow: "hidden" }]}>
-                        {imgSrc ? (
-                          <Image source={imgSrc} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
-                        ) : (
-                          <Text style={{ fontSize: 32 }}>{CUISINE_EMOJIS[recipe.cuisine] ?? "🍽"}</Text>
-                        )}
-                      </View>
-                      <Text style={[styles.recipeGridTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
-                      <Text style={[styles.recipeGridMeta, { color: colors.textSecondary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal · {recipe.prepTime + recipe.cookTime}m</Text>
-                    </TouchableOpacity>
-                    );
-                  })}
+                  {Array.from({ length: Math.ceil(recipesList.length / 2) }, (_, ri) => (
+                    <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
+                      {recipesList.slice(ri * 2, ri * 2 + 2).map((recipe) => {
+                        const imgSrc = recipe.image
+                          ? recipe.image.startsWith("http") ? { uri: recipe.image } : (RECIPE_IMAGES[recipe.image] ?? null)
+                          : null;
+                        return (
+                          <TouchableOpacity key={recipe.id} style={[styles.recipeGridItem, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/recipe/${recipe.id}`)}>
+                            <View style={[styles.recipeGridImage, { backgroundColor: colors.primary + "20", overflow: "hidden" }]}>
+                              {imgSrc ? (
+                                <Image source={imgSrc} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                              ) : (
+                                <Text style={{ fontSize: 32 }}>{CUISINE_EMOJIS[recipe.cuisine] ?? "🍽"}</Text>
+                              )}
+                            </View>
+                            <Text style={[styles.recipeGridTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
+                            <Text style={[styles.recipeGridMeta, { color: colors.textSecondary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal · {recipe.prepTime + recipe.cookTime}m</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                      {recipesList.slice(ri * 2, ri * 2 + 2).length < 2 && <View style={{ flex: 1 }} />}
+                    </View>
+                  ))}
                 </View>
               )}
             </View>
@@ -328,24 +333,29 @@ export default function ProfileScreen() {
                 </View>
               ) : (
                 <View style={styles.recipeGrid}>
-                  {savedRecipesList.map((recipe) => {
-                    const imgSrc = recipe.image
-                      ? recipe.image.startsWith("http") ? { uri: recipe.image } : (RECIPE_IMAGES[recipe.image] ?? null)
-                      : null;
-                    return (
-                    <TouchableOpacity key={recipe.id} style={[styles.recipeGridItem, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/recipe/${recipe.id}`)}>
-                      <View style={[styles.recipeGridImage, { backgroundColor: colors.saveBlue + "20", overflow: "hidden" }]}>
-                        {imgSrc ? (
-                          <Image source={imgSrc} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
-                        ) : (
-                          <Text style={{ fontSize: 32 }}>{CUISINE_EMOJIS[recipe.cuisine] ?? "🍽"}</Text>
-                        )}
-                      </View>
-                      <Text style={[styles.recipeGridTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
-                      <Text style={[styles.recipeGridMeta, { color: colors.textSecondary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal</Text>
-                    </TouchableOpacity>
-                    );
-                  })}
+                  {Array.from({ length: Math.ceil(savedRecipesList.length / 2) }, (_, ri) => (
+                    <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
+                      {savedRecipesList.slice(ri * 2, ri * 2 + 2).map((recipe) => {
+                        const imgSrc = recipe.image
+                          ? recipe.image.startsWith("http") ? { uri: recipe.image } : (RECIPE_IMAGES[recipe.image] ?? null)
+                          : null;
+                        return (
+                          <TouchableOpacity key={recipe.id} style={[styles.recipeGridItem, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/recipe/${recipe.id}`)}>
+                            <View style={[styles.recipeGridImage, { backgroundColor: colors.saveBlue + "20", overflow: "hidden" }]}>
+                              {imgSrc ? (
+                                <Image source={imgSrc} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                              ) : (
+                                <Text style={{ fontSize: 32 }}>{CUISINE_EMOJIS[recipe.cuisine] ?? "🍽"}</Text>
+                              )}
+                            </View>
+                            <Text style={[styles.recipeGridTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
+                            <Text style={[styles.recipeGridMeta, { color: colors.textSecondary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                      {savedRecipesList.slice(ri * 2, ri * 2 + 2).length < 2 && <View style={{ flex: 1 }} />}
+                    </View>
+                  ))}
                 </View>
               )}
             </View>
@@ -366,21 +376,30 @@ export default function ProfileScreen() {
                 <Text style={[styles.streakMotivation, { color: colors.primary, fontFamily: "Inter_700Bold" }]}>Keep it up!</Text>
               </View>
 
-              {/* Stats grid — no XP/Level */}
-              <View style={styles.statsGrid}>
-                {[
-                  { label: "Meals Cooked", value: stats.mealsCooked.toString(), icon: "coffee", color: colors.primary },
-                  { label: "Cuisines Tried", value: `${new Set(liveRecipes.filter(r => cookedRecipes.includes(r.id)).map(r => r.cuisine)).size}`, icon: "globe", color: "#00C9B1" },
-                  { label: "Waste Reduced", value: `${stats.wasteReduced}kg`, icon: "wind", color: "#4CAF76" },
-                  { label: "Recipes Saved", value: `${savedRecipes.length}`, icon: "bookmark", color: colors.saveBlue },
-                ].map((s) => (
-                  <View key={s.label} style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Feather name={s.icon as any} size={20} color={s.color} />
-                    <Text style={[styles.statCardValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{s.value}</Text>
-                    <Text style={[styles.statCardLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{s.label}</Text>
+              {/* Stats grid — 2×2 using flex rows (no % strings) */}
+              {(() => {
+                const STAT_ITEMS = [
+                  { label: "Meals Cooked", value: String(stats.mealsCooked ?? 0), icon: "coffee", color: colors.primary },
+                  { label: "Cuisines Tried", value: String(new Set(liveRecipes.filter(r => cookedRecipes.includes(r.id)).map(r => r.cuisine)).size), icon: "globe", color: "#00C9B1" },
+                  { label: "Waste Reduced", value: `${stats.wasteReduced ?? 0}kg`, icon: "wind", color: "#4CAF76" },
+                  { label: "Recipes Saved", value: String(savedRecipes.length), icon: "bookmark", color: colors.saveBlue },
+                ];
+                return (
+                  <View style={{ gap: 10 }}>
+                    {[STAT_ITEMS.slice(0, 2), STAT_ITEMS.slice(2, 4)].map((row, ri) => (
+                      <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
+                        {row.map((s) => (
+                          <View key={s.label} style={[styles.statCard, { flex: 1, backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Feather name={s.icon as any} size={20} color={s.color} />
+                            <Text style={[styles.statCardValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{s.value}</Text>
+                            <Text style={[styles.statCardLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{s.label}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
+                );
+              })()}
 
               {/* Top Cuisines — scrollable */}
               <View style={[styles.topCuisinesCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -391,7 +410,8 @@ export default function ProfileScreen() {
                     <Text style={styles.cuisineFlag}>{c.flag}</Text>
                     <Text style={[styles.cuisineName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{c.name}</Text>
                     <View style={[styles.cuisineBar, { backgroundColor: colors.muted }]}>
-                      <View style={[styles.cuisineBarFill, { backgroundColor: colors.primary, width: `${Math.round((c.count / 18) * 100)}%` }]} />
+                      <View style={[styles.cuisineBarFill, { backgroundColor: colors.primary, flex: c.count }]} />
+                      <View style={{ flex: 18 - c.count }} />
                     </View>
                     <Text style={[styles.cuisineCount, { color: colors.textMuted, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{c.count}</Text>
                   </View>
@@ -403,22 +423,27 @@ export default function ProfileScreen() {
           {/* ── BADGES TAB ── */}
           {activeTab === "Badges" && (
             <View style={styles.badgesGrid}>
-              {BADGES.map((badge) => (
-                <View
-                  key={badge.id}
-                  style={[styles.badgeCard, { backgroundColor: badge.earned ? colors.card : colors.muted, borderColor: badge.earned ? colors.primary + "50" : colors.border, opacity: badge.earned ? 1 : 0.55 }]}
-                >
-                  <View style={[styles.badgeIcon, { backgroundColor: badge.earned ? colors.primary + "20" : colors.border }]}>
-                    <Feather name={badge.icon === "flame" ? "zap" : badge.icon === "trophy" ? "award" : badge.icon === "leaf" ? "wind" : badge.icon as any} size={24} color={badge.earned ? colors.primary : colors.textMuted} />
-                  </View>
-                  <Text style={[styles.badgeName, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>{badge.name}</Text>
-                  <Text style={[styles.badgeDesc, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={2}>{badge.description}</Text>
-                  {badge.earned && (
-                    <View style={[styles.earnedBadge, { backgroundColor: colors.primary + "20" }]}>
-                      <Feather name="check" size={10} color={colors.primary} />
-                      <Text style={[styles.earnedText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>Earned</Text>
+              {Array.from({ length: Math.ceil(BADGES.length / 2) }, (_, ri) => (
+                <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
+                  {BADGES.slice(ri * 2, ri * 2 + 2).map((badge) => (
+                    <View
+                      key={badge.id}
+                      style={[styles.badgeCard, { flex: 1, backgroundColor: badge.earned ? colors.card : colors.muted, borderColor: badge.earned ? colors.primary + "50" : colors.border, opacity: badge.earned ? 1 : 0.55 }]}
+                    >
+                      <View style={[styles.badgeIcon, { backgroundColor: badge.earned ? colors.primary + "20" : colors.border }]}>
+                        <Feather name={badge.icon === "flame" ? "zap" : badge.icon === "trophy" ? "award" : badge.icon === "leaf" ? "wind" : badge.icon as any} size={24} color={badge.earned ? colors.primary : colors.textMuted} />
+                      </View>
+                      <Text style={[styles.badgeName, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>{badge.name}</Text>
+                      <Text style={[styles.badgeDesc, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]} numberOfLines={2}>{badge.description}</Text>
+                      {badge.earned && (
+                        <View style={[styles.earnedBadge, { backgroundColor: colors.primary + "20" }]}>
+                          <Feather name="check" size={10} color={colors.primary} />
+                          <Text style={[styles.earnedText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>Earned</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
+                  ))}
+                  {BADGES.slice(ri * 2, ri * 2 + 2).length < 2 && <View style={{ flex: 1 }} />}
                 </View>
               ))}
             </View>
@@ -465,8 +490,8 @@ const styles = StyleSheet.create({
   subtabText: { fontSize: 13 },
   emptyTab: { alignItems: "center", paddingVertical: 40, gap: 10 },
   emptyTabText: { fontSize: 14, textAlign: "center", lineHeight: 20 },
-  recipeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  recipeGridItem: { width: "47.5%", borderRadius: 14, borderWidth: 1, overflow: "hidden", paddingBottom: 12 },
+  recipeGrid: { gap: 10 },
+  recipeGridItem: { flex: 1, borderRadius: 14, borderWidth: 1, overflow: "hidden", paddingBottom: 12 },
   recipeGridImage: { aspectRatio: 1, alignItems: "center", justifyContent: "center", marginBottom: 8 },
   recipeGridTitle: { fontSize: 13, paddingHorizontal: 10 },
   recipeGridMeta: { fontSize: 11, paddingHorizontal: 10, marginTop: 4 },
@@ -478,8 +503,8 @@ const styles = StyleSheet.create({
   streakNumber: { fontSize: 34 },
   streakLabel: { fontSize: 13 },
   streakMotivation: { fontSize: 15 },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  statCard: { width: "47.5%", alignItems: "center", paddingVertical: 18, borderRadius: 16, borderWidth: 1, gap: 6 },
+  statsGrid: { gap: 10 },
+  statCard: { alignItems: "center", paddingVertical: 18, borderRadius: 16, borderWidth: 1, gap: 6 },
   statCardValue: { fontSize: 20 },
   statCardLabel: { fontSize: 12 },
   topCuisinesCard: { padding: 16, borderRadius: 16, borderWidth: 1, gap: 10 },
@@ -487,11 +512,11 @@ const styles = StyleSheet.create({
   cuisineRank: { fontSize: 12, color: "#999", width: 22 },
   cuisineFlag: { fontSize: 18 },
   cuisineName: { fontSize: 13, width: 82 },
-  cuisineBar: { flex: 1, height: 6, borderRadius: 3, overflow: "hidden" },
-  cuisineBarFill: { height: "100%", borderRadius: 3 },
+  cuisineBar: { flex: 1, height: 6, borderRadius: 3, overflow: "hidden", flexDirection: "row" },
+  cuisineBarFill: { height: 6, borderRadius: 3 },
   cuisineCount: { fontSize: 12, width: 22, textAlign: "right" },
-  badgesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  badgeCard: { width: "47.5%", alignItems: "center", padding: 14, borderRadius: 16, borderWidth: 1, gap: 7 },
+  badgesGrid: { gap: 10 },
+  badgeCard: { alignItems: "center", padding: 14, borderRadius: 16, borderWidth: 1, gap: 7 },
   badgeIcon: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   badgeName: { fontSize: 12, textAlign: "center" },
   badgeDesc: { fontSize: 10, textAlign: "center", lineHeight: 14 },
