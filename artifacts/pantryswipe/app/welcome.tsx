@@ -74,9 +74,11 @@ export default function WelcomeScreen() {
       >
         {/* Logo block — icon + name + tagline grouped tightly */}
         <View style={styles.logoBlock}>
-          <View style={[styles.logoIcon, { backgroundColor: colors.saffron }]}>
-            <Text style={styles.logoEmoji}>🍳</Text>
-          </View>
+          <Image
+            source={require("@/assets/images/app-logo.png")}
+            style={styles.logoIcon}
+            resizeMode="contain"
+          />
 
           <TextType
             key={`title-${screenKey}`}
@@ -163,7 +165,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 4,
   },
-  logoEmoji: { fontSize: 40 },
+
 
   appName: {
     fontSize: 40,
