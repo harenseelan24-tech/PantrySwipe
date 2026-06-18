@@ -609,33 +609,6 @@ export default function HomeScreen() {
         ))}
       </View>
 
-      {/* ── ACTION BUTTONS (always-visible swipe controls) ── */}
-      {!noMoreCards && (
-        <View style={styles.actionBtnRow}>
-          <TouchableOpacity
-            style={[styles.actionBtn, { borderColor: "#E84040", shadowColor: "#E84040" }]}
-            onPress={() => setProgrammaticSwipe("left")}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.actionBtnIcon, { color: "#E84040" }]}>✕</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionBtnMid, { borderColor: "#5B8EF5", shadowColor: "#5B8EF5" }]}
-            onPress={() => setProgrammaticSwipe("up")}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.actionBtnIcon, { color: "#5B8EF5", fontSize: 20 }]}>★</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: "#4CAF76", borderColor: "#4CAF76", shadowColor: "#4CAF76" }]}
-            onPress={() => setProgrammaticSwipe("right")}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.actionBtnIcon, { color: "#fff" }]}>♥</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* ── SAVE TOAST ── */}
       {saveToast && (
         <Animated.View
@@ -1121,33 +1094,6 @@ const styles = StyleSheet.create({
   // ── Deck ──
   deckWrapper: { alignItems: "center", position: "relative", flex: 1 },
   cardStack: { position: "relative" },
-  actionBtnRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 20,
-    paddingTop: 14,
-    paddingBottom: 4,
-  },
-  actionBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fff",
-    borderWidth: 2,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  actionBtnMid: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  actionBtnIcon: { fontSize: 22, fontWeight: "700" },
   emptyState: {
     width: SCREEN_WIDTH - 64,
     paddingVertical: 48, paddingHorizontal: 32,
