@@ -13,23 +13,23 @@ function NativeTabLayout() {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "house", selected: "house.fill" }} />
-        <Label>Home</Label>
+        <Icon sf={{ default: "sparkle", selected: "sparkles" }} />
+        <Label>Discover</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="pantry">
-        <Icon sf={{ default: "carrot", selected: "carrot.fill" }} />
+        <Icon sf={{ default: "bag", selected: "bag.fill" }} />
         <Label>Pantry</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="planner">
-        <Icon sf={{ default: "calendar", selected: "calendar.badge.checkmark" }} />
+        <Icon sf={{ default: "fork.knife", selected: "fork.knife" }} />
         <Label>Planner</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="social">
-        <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
+        <Icon sf={{ default: "heart", selected: "heart.fill" }} />
         <Label>Social</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
-        <Icon sf={{ default: "person.circle", selected: "person.circle.fill" }} />
+        <Icon sf={{ default: "person.crop.circle", selected: "person.crop.circle.fill" }} />
         <Label>Profile</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
@@ -81,9 +81,9 @@ function ClassicTabLayout() {
           title: "Discover",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="house" tintColor={color} size={24} />
+              <SymbolView name="sparkles" tintColor={color} size={24} />
             ) : (
-              <Feather name="home" size={22} color={color} />
+              <Feather name="compass" size={22} color={color} />
             ),
         }}
       />
@@ -93,9 +93,9 @@ function ClassicTabLayout() {
           title: "Pantry",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="cabinet" tintColor={color} size={24} />
+              <SymbolView name="bag.fill" tintColor={color} size={24} />
             ) : (
-              <Feather name="box" size={22} color={color} />
+              <Feather name="shopping-bag" size={22} color={color} />
             ),
         }}
       />
@@ -105,7 +105,7 @@ function ClassicTabLayout() {
           title: "Planner",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="calendar" tintColor={color} size={24} />
+              <SymbolView name="fork.knife" tintColor={color} size={24} />
             ) : (
               <Feather name="calendar" size={22} color={color} />
             ),
@@ -117,9 +117,9 @@ function ClassicTabLayout() {
           title: "Social",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="person.2" tintColor={color} size={24} />
+              <SymbolView name="heart.fill" tintColor={color} size={24} />
             ) : (
-              <Feather name="users" size={22} color={color} />
+              <Feather name="heart" size={22} color={color} />
             ),
         }}
       />
@@ -129,7 +129,7 @@ function ClassicTabLayout() {
           title: "Profile",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="person.circle" tintColor={color} size={24} />
+              <SymbolView name="person.crop.circle.fill" tintColor={color} size={24} />
             ) : (
               <Feather name="user" size={22} color={color} />
             ),
