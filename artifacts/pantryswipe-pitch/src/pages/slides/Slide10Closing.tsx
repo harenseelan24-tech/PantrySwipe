@@ -55,16 +55,7 @@ export default function Slide10Closing() {
         >
           PantrySwipe
         </span>
-        <span
-          style={{
-            fontSize: "0.85vw",
-            fontWeight: 300,
-            color: "#6b7280",
-            letterSpacing: "0.15em",
-          }}
-        >
-          Singapore · 2026
-        </span>
+        <span style={{ fontSize: "0.85vw", fontWeight: 300, color: "#6b7280", letterSpacing: "0.15em" }} />
       </div>
 
       {/* Main content — centered */}

@@ -17,6 +17,8 @@ import { useLocation } from "wouter";
 
 import { slides } from "@/slideLoader";
 
+const SWIPE_DURATION = 420;
+
 function getSlideIndex(pathname: string): number {
   const match = pathname.match(/^\/slide(\d+)$/);
   if (!match) return -1;
@@ -24,9 +26,28 @@ function getSlideIndex(pathname: string): number {
   return slides.findIndex((s) => s.position === position);
 }
 
+type SwipeTransition = { dir: 1 | -1; from: number; to: number };
+
 function SlideEditor() {
   const [location, navigate] = useLocation();
   const currentIndex = getSlideIndex(location);
+
+  // Swipe transition state
+  const prevIndexRef = useRef(currentIndex);
+  const [transition, setTransition] = useState<SwipeTransition | null>(null);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (currentIndex === -1) return;
+    const prev = prevIndexRef.current;
+    if (prev !== currentIndex && prev !== -1) {
+      const dir: 1 | -1 = currentIndex > prev ? 1 : -1;
+      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+      setTransition({ dir, from: prev, to: currentIndex });
+      transitionTimerRef.current = setTimeout(() => setTransition(null), SWIPE_DURATION + 30);
+    }
+    prevIndexRef.current = currentIndex;
+  }, [currentIndex]);
 
   // In the workspace, the slide iframe is nested inside another iframe,
   // so window.parent !== window.parent.parent. In the deployed SlideViewer,
@@ -124,16 +145,89 @@ function SlideEditor() {
     };
   }, [currentIndex, navigate]);
 
+  const dur = `${SWIPE_DURATION}ms`;
+  const ease = "cubic-bezier(0.32, 0.72, 0, 1)";
+
   return (
-    <div className="select-none">
-      {slides.map((slide, index) => (
+    <div
+      className="select-none"
+      style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}
+    >
+      <style>{`
+        @keyframes ps-swipe-out-left {
+          from { transform: translateX(0) rotate(0deg); opacity: 1; }
+          to   { transform: translateX(-115%) rotate(-6deg); opacity: 0; }
+        }
+        @keyframes ps-swipe-out-right {
+          from { transform: translateX(0) rotate(0deg); opacity: 1; }
+          to   { transform: translateX(115%) rotate(6deg); opacity: 0; }
+        }
+        @keyframes ps-swipe-in-right {
+          from { transform: translateX(60%) scale(0.88); opacity: 0; }
+          to   { transform: translateX(0) scale(1); opacity: 1; }
+        }
+        @keyframes ps-swipe-in-left {
+          from { transform: translateX(-60%) scale(0.88); opacity: 0; }
+          to   { transform: translateX(0) scale(1); opacity: 1; }
+        }
+        @keyframes ps-color-flash {
+          0%   { opacity: 0; }
+          25%  { opacity: 0.22; }
+          100% { opacity: 0; }
+        }
+      `}</style>
+
+      {slides.map((slide, index) => {
+        const isFrom = transition !== null && index === transition.from;
+        const isTo   = transition !== null && index === transition.to;
+        const isIdle = transition === null && index === currentIndex;
+
+        if (!isFrom && !isTo && !isIdle) return null;
+
+        let extraStyle: React.CSSProperties = {
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+        };
+
+        if (isFrom && transition) {
+          extraStyle = {
+            ...extraStyle,
+            zIndex: 1,
+            animation: `${transition.dir === 1 ? "ps-swipe-out-left" : "ps-swipe-out-right"} ${dur} ${ease} forwards`,
+          };
+        } else if (isTo && transition) {
+          extraStyle = {
+            ...extraStyle,
+            zIndex: 2,
+            animation: `${transition.dir === 1 ? "ps-swipe-in-right" : "ps-swipe-in-left"} ${dur} ${ease} forwards`,
+          };
+        } else {
+          extraStyle = { ...extraStyle, zIndex: 0 };
+        }
+
+        return (
+          <div key={slide.id} style={extraStyle}>
+            <slide.Component />
+          </div>
+        );
+      })}
+
+      {/* Directional colour hue overlay */}
+      {transition && (
         <div
-          key={slide.id}
-          style={{ display: index === currentIndex ? "block" : "none" }}
-        >
-          <slide.Component />
-        </div>
-      ))}
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 20,
+            pointerEvents: "none",
+            backgroundColor: transition.dir === 1 ? "#4CAF76" : "#E84040",
+            animation: `ps-color-flash ${dur} ease-out forwards`,
+          }}
+        />
+      )}
     </div>
   );
 }

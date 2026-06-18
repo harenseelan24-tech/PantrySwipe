@@ -71,16 +71,53 @@ export default function Slide01Title() {
         >
           PantrySwipe
         </span>
-        <span
-          style={{
-            fontSize: "0.85vw",
-            fontWeight: 300,
-            color: "#6b7280",
-            letterSpacing: "0.15em",
-          }}
-        >
-          2026
-        </span>
+        {/* App icon — top right */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.8vw" }}>
+          <span
+            style={{
+              fontSize: "0.85vw",
+              fontWeight: 300,
+              color: "#6b7280",
+              letterSpacing: "0.15em",
+            }}
+          >
+            2026
+          </span>
+          {/* PantrySwipe app icon badge */}
+          <div
+            style={{
+              width: "3.2vw",
+              height: "3.2vw",
+              borderRadius: "0.7vw",
+              background: "linear-gradient(135deg, #F5A623 0%, #E8891A 100%)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 0 1.5vw rgba(245,166,35,0.45), 0 0.3vw 0.8vw rgba(0,0,0,0.5)",
+              flexShrink: 0,
+            }}
+          >
+            <svg
+              width="55%"
+              height="55%"
+              viewBox="0 0 36 36"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* Fork tines */}
+              <line x1="10" y1="4" x2="10" y2="13" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+              <line x1="14" y1="4" x2="14" y2="13" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+              <line x1="18" y1="4" x2="18" y2="13" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+              {/* Fork neck */}
+              <path d="M10 13 Q10 17 14 17 Q18 17 18 13" stroke="white" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+              {/* Fork handle */}
+              <line x1="14" y1="17" x2="14" y2="30" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
+              {/* Swipe arrow — right */}
+              <path d="M22 16 L29 16" stroke="white" strokeWidth="2" strokeLinecap="round" />
+              <path d="M26 12 L30 16 L26 20" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </svg>
+          </div>
+        </div>
       </div>
 
       {/* Main content — centered */}
