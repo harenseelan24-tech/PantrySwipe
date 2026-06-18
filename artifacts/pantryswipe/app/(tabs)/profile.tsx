@@ -368,7 +368,7 @@ export default function ProfileScreen() {
               {/* Stats grid — no XP/Level */}
               <View style={styles.statsGrid}>
                 {[
-                  { label: "Meals Cooked", value: stats.mealsCoooked.toString(), icon: "coffee", color: colors.primary },
+                  { label: "Meals Cooked", value: stats.mealsCooked.toString(), icon: "coffee", color: colors.primary },
                   { label: "Cuisines Tried", value: `${new Set(liveRecipes.filter(r => cookedRecipes.includes(r.id)).map(r => r.cuisine)).size}`, icon: "globe", color: "#00C9B1" },
                   { label: "Waste Reduced", value: `${stats.wasteReduced}kg`, icon: "wind", color: "#4CAF76" },
                   { label: "Recipes Saved", value: `${savedRecipes.length}`, icon: "bookmark", color: colors.saveBlue },

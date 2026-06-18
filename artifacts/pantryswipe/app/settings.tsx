@@ -16,6 +16,7 @@ import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
+import { STORAGE_KEYS } from "@/constants/storageKeys";
 import { useSubscription } from "@/lib/revenuecat";
 
 export default function SettingsScreen() {
@@ -39,7 +40,7 @@ export default function SettingsScreen() {
 
   const handleSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await AsyncStorage.removeItem("pantryswipe_setup_complete");
+    await AsyncStorage.removeItem(STORAGE_KEYS.SETUP_COMPLETE);
     router.replace("/welcome");
   };
 

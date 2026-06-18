@@ -1,0 +1,376 @@
+# PantrySwipe — Full QA & Backend Audit Prompt
+
+> Paste this entire prompt into Replit AI Agent. It will systematically go through every layer of the app — frontend, backend, state, navigation, gestures, data, edge cases, and UX — and fix everything it finds.
+
+---
+
+## ROLE & MISSION
+
+You are a **senior full-stack QA engineer and code auditor** with 10+ years of experience shipping production React Native / Expo apps. Your job is to perform a **complete, zero-compromise quality audit** of the PantrySwipe app. Treat this as if 100 engineers built this and you are the last gate before it ships to 100,000 real users. Nothing gets through broken, undefined, silent-failing, or navigating nowhere.
+
+The app is built on:
+- **Expo SDK 54 / React Native 0.81 / expo-router v6**
+- **TypeScript 5.9**, pnpm workspaces
+- **AppContext.tsx** for global state (AsyncStorage-backed, no external DB)
+- **PanResponder** for swipe gestures (NOT gesture-handler)
+- **5-tab navigation**: Home (Discover), Pantry, Planner, Social, Profile
+- **Stack screens**: welcome, onboarding, recipe/[id], ai-chef, party-planner, notifications, cook-mode
+
+Work through **every section below** in order. For each item: read the relevant source file(s), identify the bug or gap, fix it completely, and confirm the fix works. Do not stop until every item is checked and resolved. Log what you find and what you changed.
+
+---
+
+## SECTION 1 — APP LAUNCH & NAVIGATION GUARD
+
+1.1 Open `app/index.tsx`. Verify the AsyncStorage check correctly detects first-time vs returning users. Confirm it does NOT flash the wrong screen for even one frame (no layout flicker). Add a loading splash/indicator if AsyncStorage read is async and unresolved UI is shown.
+
+1.2 Confirm the route guard correctly navigates to `/welcome` for first-time users and `/(tabs)` for returning users. Test that `router.replace()` is used (not `router.push()`) so the back button cannot go back to the root guard screen.
+
+1.3 Verify the onboarding flow (`/welcome` → `/onboarding` → `/(tabs)`) runs in order with no skippable steps that shouldn't be skippable. Ensure completing onboarding writes the correct AsyncStorage key so the user is recognized as returning on next launch.
+
+1.4 Confirm that if AsyncStorage throws an error (corrupted data, storage full), the app defaults gracefully to the onboarding flow rather than crashing or hanging forever.
+
+1.5 Confirm every `router.push()`, `router.replace()`, and `Link href` across the entire codebase points to a route that actually exists in the `app/` directory. List and fix any dead-end links.
+
+---
+
+## SECTION 2 — TAB NAVIGATION (ALL 5 TABS)
+
+For each tab, open the screen file and verify:
+
+2.1 **Home / Discover tab**
+- The swipe card deck renders with at least 1 card. It does NOT show a blank screen on first load.
+- Swipe RIGHT (cook), LEFT (skip), UP (save) all register correctly via PanResponder and trigger the correct state update in AppContext.
+- After all cards are swiped, an end-of-deck message or refresh CTA appears — NOT a blank screen or crash.
+- Pantry match % is calculated and displayed correctly. Verify the formula against actual pantry items in context.
+- The recipe card shows: image, title, cook time, difficulty, pantry match %. None of these fields render as `undefined`, `null`, or empty.
+- Pressing the card (not swiping) navigates to `recipe/[id]`. Confirm the ID passed is correct and the detail screen loads.
+
+2.2 **Pantry tab**
+- All pantry items from `mockData.ts` render correctly with name, category, quantity, and expiry date.
+- The "Add ingredient" button/FAB opens an input modal or form. Confirm the modal actually opens and is dismissible.
+- Adding an ingredient: validates that name is not empty, quantity is a positive number, expiry is a valid date. Show inline error messages if invalid. Do NOT silently fail.
+- After adding, the item appears in the list immediately (optimistic update) and persists to AsyncStorage.
+- Deleting an item: confirm a swipe-to-delete or delete button works, shows a confirmation if appropriate, and removes the item from both context state and AsyncStorage.
+- Editing an item: confirm any edit flow pre-fills existing values and saves correctly.
+- Category filter chips: confirm tapping each category filters the list. Confirm "All" resets the filter.
+- Expiry tracking: items close to expiry (within 3 days) and expired items must visually indicate their status (color, icon, badge). Confirm the date math is correct using today's actual date — not a hardcoded date.
+- AI suggestions button: confirm it opens/renders something meaningful and does not navigate to a dead route.
+- Pantry intelligence section: confirm it displays actionable info and does not crash when pantry is empty.
+
+2.3 **Planner tab**
+- Weekly meal plan grid renders all 7 days. Days are labeled correctly (Mon–Sun or equivalent).
+- Tapping an empty slot: confirm it opens a recipe picker or add-meal flow. Confirm it does not crash.
+- Tapping a filled slot: confirm it shows the assigned recipe details.
+- "Auto-generate" button: confirm it populates the plan with recipes. Confirm it doesn't freeze the UI. Show a loading indicator if async.
+- Nutrition summary: verify calorie/macro values are calculated from actual recipe data, not hardcoded. Verify it updates when the plan changes.
+- "Shopping list" CTA: confirm it generates a list from unowned pantry ingredients needed for the plan. Confirm it actually navigates somewhere or shows a modal — not dead.
+- Removing a meal from a slot: confirm the slot returns to empty and state updates.
+
+2.4 **Social tab**
+- Feed renders posts with: image, username, caption, like count, save count, recipe link. None undefined.
+- Like button: toggles liked state visually (filled/unfilled heart) and increments/decrements the count. Does not double-fire on rapid taps. State persists within session.
+- Save button: toggles saved state and reflects in Profile's saved grid.
+- Recipe link on a post: navigates to `recipe/[id]` with the correct recipe. Confirm the linked recipe exists in data.
+- Tab switching (Discover / Following / Trending): confirm each tab loads distinct content and does not show the same list.
+- Pull-to-refresh: confirm it resets or re-fetches feed data without crashing.
+- Empty state: if a feed tab is empty, show a helpful empty state message — not a blank screen.
+
+2.5 **Profile tab**
+- User stats (recipes cooked, streak, XP, level) render correctly from AppContext. None show `NaN`, `undefined`, or `0` when they shouldn't be 0.
+- Cooking streak: verify the streak logic increments daily and resets correctly if a day is missed.
+- XP / level progression: verify leveling up works when XP threshold is crossed. Confirm the displayed level matches XP.
+- Achievement badges: badges that should be unlocked (based on stats) show as unlocked. Locked badges show as locked. No badge shows wrong unlock state.
+- Saved recipes grid: reflects all saved swipes from the Discover tab. Tapping a saved recipe navigates to `recipe/[id]`.
+- Cooked recipes grid: reflects all right-swiped recipes. Tapping navigates to `recipe/[id]`.
+- Edit profile button (if present): opens an edit form, saves changes, and reflects them immediately.
+- Settings or logout (if present): confirm each option functions and does not navigate to a dead route.
+
+---
+
+## SECTION 3 — STACK SCREENS
+
+3.1 **`recipe/[id]`**
+- Receives the `id` param and looks up the recipe from context/mock data. If the ID is invalid or not found, show a proper error state (not a crash, not undefined fields).
+- All recipe fields render: title, image, description, ingredients list, steps, cook time, difficulty, nutrition, pantry match.
+- Ingredients list: each ingredient shows name, quantity, unit. Items already in pantry are visually distinguished (checked, colored, etc.).
+- "Cook Now" button navigates to cook-mode with the correct recipe loaded.
+- "Save" / "Like" buttons on the detail screen update AppContext and are consistent with state shown elsewhere.
+- Back navigation returns to the correct previous screen.
+
+3.2 **Cook Mode** (`/cook-mode` or equivalent)
+- Receives the recipe and renders steps one at a time.
+- "Next step" and "Previous step" buttons work. Step counter is accurate (e.g. "Step 2 of 6").
+- Cannot go to previous on step 1. Cannot go to next on the last step — shows a "Done" / "Finish" action instead.
+- Timers: any step with a timer — confirm the timer starts, counts down correctly, and shows a visual or haptic alert when done. Confirm the timer does NOT continue running after navigating away.
+- "Finish cooking" marks the recipe as cooked in AppContext (increments cooked count, awards XP, updates streak).
+- Exiting mid-cook: confirm back button works and does not leave orphaned timers running.
+
+3.3 **AI Chef** (`/ai-chef`)
+- Chat interface renders with input field and send button.
+- Sending a message: input clears after send, message appears in chat history immediately.
+- AI response (mock or real): appears after a visible loading indicator. Does NOT hang forever. Has a timeout fallback.
+- Quick prompt chips: tapping a chip populates the input or sends directly. Confirm each chip triggers a sensible mock response.
+- Pantry-aware responses: confirm the mock response logic reads from AppContext pantry items and reflects them in suggestions.
+- Long chat history: confirm the chat scrolls to the latest message automatically. Does not hide new messages below the keyboard.
+- Keyboard behavior: input field is not obscured by the keyboard on iOS/Android. KeyboardAvoidingView or equivalent is applied.
+
+3.4 **Party Planner** (`/party-planner`)
+- Multi-step wizard renders Step 1 correctly.
+- "Next" button on each step validates required inputs before proceeding. Shows inline error if empty/invalid — does NOT silently advance with blank data.
+- "Back" button on each step returns to the previous step with previously entered data preserved (not wiped).
+- Step progress indicator reflects current step accurately.
+- Step 1: event type selection. Step 2: guest count (numeric input, min 1). Step 3: serving style. Step 4: budget (numeric, min 0). Confirm all inputs are validated.
+- Final step generates a full menu + timeline. Confirm the generated output is non-empty and renders in a readable format.
+- "Start over" or exit: resets wizard state cleanly.
+
+3.5 **Notifications** (`/notifications`)
+- Screen renders a list of notifications. Does not crash on empty list.
+- Each notification item is tappable and navigates to the relevant destination (recipe, social post, etc.).
+- "Mark all as read" (if present) clears unread indicators.
+- Unread badge on tab or nav icon: confirm it reflects actual unread count from context.
+
+3.6 **Welcome & Onboarding screens**
+- Welcome screen: CTA button ("Get Started" or equivalent) navigates to onboarding — not dead.
+- Onboarding: each step renders its content fully. "Skip" (if present) behaves correctly — does it skip to tabs or next step? Confirm intended behavior.
+- Dietary preference / cuisine selection steps: selections are stored in AppContext and used downstream (e.g. to filter recipes).
+- Final onboarding step: "Let's Go" navigates to `/(tabs)` and writes the onboarding-complete flag to AsyncStorage.
+
+---
+
+## SECTION 4 — APPCONTEXT & STATE MANAGEMENT
+
+4.1 Open `context/AppContext.tsx` in full. Read every state variable and every function.
+
+4.2 **Initialization**: Confirm AsyncStorage hydration runs on mount and populates all state before the UI renders data. Add a loading gate if needed.
+
+4.3 **State persistence**: Every state mutation (add item, remove item, swipe recipe, like post, complete cooking, update profile, etc.) must call the corresponding AsyncStorage `setItem`. Find any state updates that update React state but forget to persist to AsyncStorage, and fix them.
+
+4.4 **State hydration on return**: Simulate clearing React state (re-mount the provider) — confirm all state is restored from AsyncStorage correctly, including arrays of objects, nested objects, and numeric values.
+
+4.5 **Pantry state functions**:
+- `addPantryItem`: validates input, prevents duplicates (same name + unit), pushes to array, persists.
+- `removePantryItem`: removes by correct ID, persists.
+- `updatePantryItem`: updates the correct item, does not create a duplicate entry.
+
+4.6 **Recipe swipe functions**:
+- `swipeRight` (cook): adds to cooked list, awards XP, increments streak, persists.
+- `swipeLeft` (skip): records skip (for future filtering), persists.
+- `swipeUp` (save): adds to saved list, persists. Does NOT also add to cooked.
+- Swiping the same recipe twice: confirm duplicate guard — it should not appear twice in saved or cooked lists.
+
+4.7 **Streak logic**: Confirm streak increments once per calendar day, not once per cook action in a session. Confirm streak resets to 0 if more than 1 calendar day passes without cooking.
+
+4.8 **XP / leveling logic**: Confirm XP awards are the correct values per action. Confirm level thresholds are defined and leveling up fires correctly. Confirm level does not regress.
+
+4.9 **Social state**: Liked posts and saved posts are tracked in context. Confirm toggling like updates the count and the liked state consistently. Confirm re-rendering any screen with the same post shows consistent liked/saved state.
+
+4.10 **Meal plan state**: Adding, removing, and replacing meals in the plan persist to AsyncStorage. Auto-generation replaces the full plan in state and storage.
+
+4.11 **Error handling in context**: All AsyncStorage calls are wrapped in try/catch. On error, log to console AND surface a user-visible message (or silently fail gracefully — do not crash the app).
+
+4.12 **Context provider wrapping**: Confirm `AppContext.Provider` wraps the entire app (in `_layout.tsx` or root). No screen should render outside the provider.
+
+---
+
+## SECTION 5 — DATA LAYER (mockData.ts)
+
+5.1 Open `data/mockData.ts`. Read all exported arrays and objects.
+
+5.2 Every recipe object must have: `id` (unique string), `title`, `image` (valid require() path that exists on disk), `description`, `ingredients` (array with name/quantity/unit), `steps` (array of strings), `cookTime` (number, minutes), `difficulty` ('easy'|'medium'|'hard'), `calories`, `servings`, `tags` (array).
+
+5.3 Verify no two recipes share the same `id`. Run a deduplication check.
+
+5.4 Every pantry item mock must have: `id`, `name`, `category`, `quantity`, `unit`, `expiryDate` (ISO date string).
+
+5.5 Verify every `image` field in recipe data points to a file that actually exists in the assets folder. Fix any broken image references by substituting valid placeholders.
+
+5.6 Verify social post mock data: each post has `id`, `userId`, `username`, `userAvatar`, `imageUrl`, `caption`, `likes`, `saves`, `recipeId`. `recipeId` must match an existing recipe `id`.
+
+5.7 Pantry match % calculation: write or verify a utility function that given a recipe's ingredient list and the current pantry, returns a 0–100% match. Test it against at least 3 recipes and confirm the output is sensible.
+
+---
+
+## SECTION 6 — SWIPE GESTURE SYSTEM
+
+6.1 Open `components/SwipeCard.tsx`. Read the full PanResponder setup.
+
+6.2 Confirm `onMoveShouldSetPanResponder` correctly captures the gesture (returns `true`). Confirm it does not conflict with scroll views or other touch handlers.
+
+6.3 Swipe thresholds: confirm RIGHT, LEFT, and UP swipe thresholds are defined and sensible (e.g. dx > 120 for right, dx < -120 for left, dy < -100 for up). They should not be too sensitive (fire on a slight nudge) or too resistant (require a full-screen drag).
+
+6.4 Card animation: the card must visually follow the user's finger during the drag. The rotation/tilt effect must be smooth. On release below threshold, the card must spring back to center.
+
+6.5 On a successful swipe: the card animates off-screen in the swipe direction, the callback fires exactly once, and the next card becomes active.
+
+6.6 Prevent double-fire: if the user swipes very quickly, the swipe callback must not fire twice. Add a `isSwiping` guard flag if not present.
+
+6.7 Button-triggered swipes (if action buttons exist below the card): confirm they trigger the same animation and callback as manual swipes.
+
+6.8 Accessibility: add `accessibilityLabel` and `accessibilityRole` to swipeable cards and action buttons.
+
+---
+
+## SECTION 7 — UI & UX COMPLETENESS
+
+7.1 **Loading states**: Every async operation (AsyncStorage read, mock AI response, auto-generate plan, party planner generation) must show a loading spinner or skeleton. No operation should leave the UI frozen with no feedback.
+
+7.2 **Empty states**: Every list in the app (pantry, saved recipes, cooked recipes, meal plan, social feed, notifications) must have a designed empty state with a helpful message and a CTA to add content. No blank white screens.
+
+7.3 **Error states**: Network errors (for any future real API calls), AsyncStorage failures, and invalid data must show user-friendly error messages with a retry option. No raw error objects rendered to screen.
+
+7.4 **Form validation**: Every input field across the app (add ingredient, onboarding preferences, party planner wizard) must validate on submit. Required fields show errors when empty. Numeric fields reject non-numeric input. Date fields reject invalid dates.
+
+7.5 **Keyboard handling**: Every screen with a text input must handle the keyboard correctly — KeyboardAvoidingView, ScrollView with keyboardShouldPersistTaps, or equivalent. No input should be hidden behind the keyboard.
+
+7.6 **Button states**: Every button must have a disabled state when its action is not available (e.g. "Next" on a form step with empty required fields). Disabled buttons must look visually distinct and not respond to taps.
+
+7.7 **Double-tap / rapid tap protection**: All buttons that trigger state changes (swipe, like, save, add item, send message) must be debounced or guarded to prevent double-firing on rapid taps. Use a ref-based guard or `disabled` prop during async operations.
+
+7.8 **Haptic feedback**: Confirm `expo-haptics` fires on: successful swipe right, successful swipe left, save (swipe up), like, achievement unlocked, level up, and completing a recipe. These should feel tactile and intentional.
+
+7.9 **Brand colors**: Confirm `constants/colors.ts` is imported and used consistently. No hardcoded hex color values scattered in component styles — all colors must reference the constants. Audit 5 random components for compliance.
+
+7.10 **Dark mode**: Confirm the app respects the device color scheme. All screens must be readable in both light and dark mode. No white-on-white or black-on-black text. Test the color constants for both themes.
+
+7.11 **Font sizes & accessibility**: No text smaller than 12sp. Interactive tap targets no smaller than 44×44pt. Verify on a small screen (375pt width).
+
+7.12 **Image loading**: All recipe and post images must show a placeholder/skeleton while loading and a fallback if the image fails to load. No broken image icons visible to users.
+
+7.13 **Scroll performance**: Long lists (recipes, pantry items, social feed) must use `FlatList` or `FlashList`, NOT `ScrollView` with `.map()`. Confirm this in every screen with a list. Fix any that use map-in-ScrollView.
+
+---
+
+## SECTION 8 — TYPESCRIPT & CODE QUALITY
+
+8.1 Run `pnpm run typecheck` from the repo root. Resolve every TypeScript error. Zero errors is the target.
+
+8.2 Search for all uses of `any` type. Replace with proper typed interfaces. Especially in AppContext, mockData types, and API response handlers.
+
+8.3 Search for all `// @ts-ignore` and `// @ts-expect-error` comments. Justify each one or remove and fix.
+
+8.4 Confirm all exported functions have explicit return types. Confirm all props interfaces are defined with no optional props that should be required.
+
+8.5 Confirm all `useEffect` hooks have correct dependency arrays. No missing dependencies that cause stale closures. No unnecessary deps that cause infinite loops.
+
+8.6 Search for `console.log` and `console.warn` throughout the codebase. Remove all debugging logs. Keep `console.error` only in catch blocks.
+
+8.7 Confirm no unused imports, unused variables, or dead code paths. Run ESLint if configured; fix all warnings.
+
+8.8 Confirm all async functions are properly awaited. Search for floating promises (async calls without `await` or `.catch()`).
+
+8.9 Check all array operations (`.find()`, `.filter()`, `.map()`) handle the case where the result is `undefined` or empty. No unchecked `.find()` result used without a null guard.
+
+8.10 Check all `JSON.parse()` calls are wrapped in try/catch — especially when reading from AsyncStorage.
+
+---
+
+## SECTION 9 — ASYNCSTORAGE INTEGRITY
+
+9.1 List every AsyncStorage key used across the app. Confirm they are defined as constants (not magic strings scattered in code). Create a `constants/storageKeys.ts` file if one doesn't exist.
+
+9.2 For each key: confirm the write format (JSON.stringify) matches the read format (JSON.parse). Confirm the default value returned when the key is missing is correct (not `null` passed into a function expecting an array).
+
+9.3 Confirm there is no scenario where stale or partial state from a previous session can cause a crash in a new session. Add migration/version guards if the data schema has changed since initial launch.
+
+9.4 Confirm `AsyncStorage.multiSet` or batched writes are used where multiple keys must be updated atomically (e.g. XP + level + streak on completing a recipe). Avoid partial writes that leave state inconsistent.
+
+9.5 Simulate AsyncStorage being cleared (factory reset scenario): confirm the app boots cleanly into onboarding with all state at correct defaults.
+
+---
+
+## SECTION 10 — EXPO ROUTER & FILE-BASED ROUTING
+
+10.1 Open `app/_layout.tsx`. Confirm the root layout wraps children in AppContext.Provider, a safe area provider, and any global UI (toast/snackbar system, modal portals).
+
+10.2 Confirm `app/(tabs)/_layout.tsx` defines all 5 tabs with correct `href`, icons, and labels. Confirm no tab is accidentally hidden or rendered twice.
+
+10.3 Confirm all dynamic routes (`recipe/[id]`, etc.) use `useLocalSearchParams()` correctly and handle the case where the param is missing or malformed.
+
+10.4 Confirm `expo-router` `Link` components use `href` correctly (not string concatenation that misses a leading slash).
+
+10.5 Confirm the back button behavior is correct on every stack screen. Deep-linked screens should be able to navigate back to the appropriate tab.
+
+10.6 Check for any use of the deprecated `useRouter().push()` with an object — ensure it uses the string-based href format compatible with expo-router v6.
+
+---
+
+## SECTION 11 — PERFORMANCE
+
+11.1 Confirm `React.memo` or `useMemo` is applied to expensive components: SwipeCard, recipe grid items, social feed posts. Confirm they do not re-render on every AppContext change.
+
+11.2 Confirm `useCallback` wraps all functions passed as props to child components (especially list item callbacks).
+
+11.3 Confirm images use `resizeMode` appropriately and are not loading unnecessarily large assets for small display sizes.
+
+11.4 Confirm PanResponder `onPanResponderMove` does not trigger expensive re-renders on every frame. The animation value update should use `Animated.Value.setValue` (not setState).
+
+11.5 Confirm `FlatList`'s `keyExtractor` returns a unique, stable key for every item (recipe id, pantry item id — not array index).
+
+11.6 Confirm `FlatList`'s `initialNumToRender` and `maxToRenderPerBatch` are set to sensible values to avoid janky initial loads.
+
+---
+
+## SECTION 12 — EDGE CASES & BOUNDARY CONDITIONS
+
+12.1 **Zero pantry items**: Discover screen's match % should show 0% gracefully (not NaN or crash). Pantry tab shows empty state. Planner generates a plan without crashing.
+
+12.2 **Maximum pantry items**: Add 50+ items to pantry. Confirm the list scrolls, performs well, and nothing crashes.
+
+12.3 **All recipes swiped**: When every recipe has been swiped, the deck shows an end-of-deck message. Confirm a "Refresh" or "Explore more" CTA works.
+
+12.4 **Streak on day 1**: A user who has never cooked has streak = 0. Cooking their first recipe should set streak to 1, not crash.
+
+12.5 **Party planner with 0 budget**: Confirm it handles $0 budget without dividing by zero or generating a nonsensical menu.
+
+12.6 **Party planner with 1 guest**: Confirm serving calculations work for single-person events.
+
+12.7 **AI Chef with empty input**: The send button should be disabled when the input is empty. Pressing it should not send a blank message.
+
+12.8 **Very long recipe names or ingredient names**: Confirm text truncates gracefully (ellipsis) and does not overflow cards, list items, or modals.
+
+12.9 **Very long chat messages in AI Chef**: Confirm the chat bubble expands or scrolls correctly rather than overflowing off-screen.
+
+12.10 **Expired pantry item filtering**: If a feature filters by valid items only, confirm expired items are excluded correctly.
+
+12.11 **Network offline state**: If any feature relies on a network call (even the mock api-server), confirm a graceful offline message is shown rather than a hang or crash.
+
+12.12 **Back gesture during async operation**: If the user swipes back while a loading operation is in progress, confirm no unhandled promise rejection or setState-on-unmounted-component warning occurs. Add cleanup in useEffect return functions.
+
+---
+
+## SECTION 13 — FINAL VERIFICATION CHECKLIST
+
+After completing all sections above, perform this final pass:
+
+- [ ] Launch app fresh (clear AsyncStorage) → onboarding appears, completes, lands on Home tab
+- [ ] Swipe a card right → recipe appears in cooked grid on Profile tab
+- [ ] Swipe a card up → recipe appears in saved grid on Profile tab
+- [ ] Swipe a card left → card dismissed, next card shows
+- [ ] Add an ingredient to Pantry → appears in list immediately
+- [ ] Navigate to Planner → auto-generate populates all 7 days
+- [ ] Navigate to Social → like a post → like count updates
+- [ ] Navigate to Profile → stats are non-zero after above actions
+- [ ] Open a recipe detail → all fields populated → tap "Cook Now" → cook mode opens
+- [ ] Complete all cook mode steps → recipe marked cooked, XP awarded
+- [ ] Open AI Chef → send a message → response appears → no crash
+- [ ] Open Party Planner → complete all steps → menu generated
+- [ ] Open Notifications → list renders (even if empty state)
+- [ ] Kill app → relaunch → all state persists (saved recipes, pantry items, stats)
+- [ ] Run `pnpm run typecheck` → zero errors
+- [ ] No `console.log` statements remain in production code
+- [ ] No screen in the app shows a blank white area where content should be
+- [ ] Every button in the app navigates somewhere or triggers a visible action
+
+---
+
+## DELIVERY FORMAT
+
+After completing all fixes, provide:
+
+1. A **summary list** of every bug found, categorized by section
+2. A **list of every file modified** with a one-line description of what changed
+3. A **list of any issues that could not be fully fixed** with a clear explanation of why and what partial mitigation was applied
+4. Confirmation that `pnpm run typecheck` passes with zero errors
+
+Do not skip any section. Do not mark a section as "done" without actually reading the relevant source files and verifying the behavior. This audit is the difference between a demo and a product.

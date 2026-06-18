@@ -6,9 +6,10 @@ import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useColors } from "@/hooks/useColors";
 import { useNotifications } from "@/hooks/useNotifications";
+import { STORAGE_KEYS } from "@/constants/storageKeys";
 
 // ── Intent key shared with index.tsx ─────────────────────────────────────────
-export const INTENT_KEY = "@pantryswipe:pendingIntent";
+const INTENT_KEY = STORAGE_KEYS.PENDING_INTENT;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Action =

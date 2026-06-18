@@ -2,13 +2,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Redirect } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { View } from "react-native";
+import { STORAGE_KEYS } from "@/constants/storageKeys";
 
 export default function RootIndex() {
   const [ready, setReady] = useState(false);
   const [setupComplete, setSetupComplete] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem("pantryswipe_setup_complete")
+    AsyncStorage.getItem(STORAGE_KEYS.SETUP_COMPLETE)
       .then((val) => {
         try {
           setSetupComplete(!!JSON.parse(val ?? "false"));

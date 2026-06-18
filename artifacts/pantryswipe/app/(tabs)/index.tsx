@@ -23,9 +23,10 @@ import { useColors } from "@/hooks/useColors";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useApp } from "@/context/AppContext";
 import { Recipe } from "@/data/mockData";
+import { STORAGE_KEYS } from "@/constants/storageKeys";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const INTENT_KEY = "@pantryswipe:pendingIntent";
+const INTENT_KEY = STORAGE_KEYS.PENDING_INTENT;
 const CARD_WIDTH = SCREEN_WIDTH - 16;
 
 const MOODS = [
@@ -184,7 +185,7 @@ export default function HomeScreen() {
 
   // ── Check if tutorial has been seen ──
   useEffect(() => {
-    AsyncStorage.getItem("swipeTutorialSeen").then((val) => {
+    AsyncStorage.getItem(STORAGE_KEYS.TUTORIAL_SEEN).then((val) => {
       if (!val) {
         setTimeout(() => {
           setShowTutorial(true);
@@ -203,7 +204,7 @@ export default function HomeScreen() {
       // All steps done → fade out
       Animated.timing(tutOverlayOpacity, { toValue: 0, duration: 300, useNativeDriver: false }).start(() => {
         setShowTutorial(false);
-        AsyncStorage.setItem("swipeTutorialSeen", "1");
+        AsyncStorage.setItem(STORAGE_KEYS.TUTORIAL_SEEN, "1");
       });
       return;
     }
@@ -236,7 +237,7 @@ export default function HomeScreen() {
   };
 
   const dismissTutorial = async () => {
-    await AsyncStorage.setItem("swipeTutorialSeen", "1");
+    await AsyncStorage.setItem(STORAGE_KEYS.TUTORIAL_SEEN, "1");
     Animated.timing(tutOverlayOpacity, { toValue: 0, duration: 250, useNativeDriver: false }).start(() => {
       setShowTutorial(false);
     });

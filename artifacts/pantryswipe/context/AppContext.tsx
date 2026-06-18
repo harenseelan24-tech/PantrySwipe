@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { INITIAL_PANTRY, MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
+import { STORAGE_KEYS } from "@/constants/storageKeys";
 
 // ─── Unit normalisation ───────────────────────────────────────────────────────
 function normalizeUnit(unit: string): string {
@@ -24,6 +25,23 @@ function parseIngredientAmount(str: string): { value: number; unit: string } | n
   const m = str.trim().match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]*)/);
   if (!m || !m[1]) return null;
   return { value: parseFloat(m[1]), unit: normalizeUnit(m[2] || "") };
+}
+
+/**
+ * Compute the new streak value given the current streak and the date of the
+ * last cook session.
+ * - Same calendar day  → unchanged (already counted today)
+ * - Previous calendar day → consecutive, increment by 1
+ * - Older or empty     → streak broken, reset to 1
+ */
+function computeNewStreak(currentStreak: number, lastCookedDate: string): number {
+  if (!lastCookedDate) return 1;
+  const today = new Date().toISOString().split("T")[0];
+  const last  = lastCookedDate.split("T")[0]; // tolerates full ISO or date-only strings
+  if (last === today) return currentStreak;   // already cooked today — don't double-count
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().split("T")[0];
+  if (last === yesterday) return currentStreak + 1; // consecutive day
+  return 1; // gap — streak resets
 }
 
 const API_BASE = Platform.OS !== "web"
@@ -164,7 +182,7 @@ interface UserProfile {
 }
 
 interface CookingStats {
-  mealsCoooked: number;
+  mealsCooked: number;
   streak: number;
   lastCookedDate: string;
   xp: number;
@@ -235,13 +253,13 @@ const defaultProfile: UserProfile = {
 };
 
 const defaultStats: CookingStats = {
-  mealsCoooked: 24,
-  streak: 7,
-  lastCookedDate: new Date().toISOString(),
-  xp: 1250,
-  level: 8,
-  moneySaved: 340,
-  wasteReduced: 12,
+  mealsCooked: 0,
+  streak: 0,
+  lastCookedDate: "",
+  xp: 0,
+  level: 1,
+  moneySaved: 0,
+  wasteReduced: 0,
 };
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -249,8 +267,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile>(defaultProfile);
   const [pantryItems, setPantryItems] = useState<PantryItem[]>(INITIAL_PANTRY);
-  const [savedRecipes, setSavedRecipes] = useState<string[]>(["1", "3"]);
-  const [cookedRecipes, setCookedRecipes] = useState<string[]>(["1", "2", "4"]);
+  const [savedRecipes, setSavedRecipes] = useState<string[]>([]);
+  const [cookedRecipes, setCookedRecipes] = useState<string[]>([]);
   const [cookingHistory, setCookingHistory] = useState<CookingEntry[]>([]);
   const [stats, setStats] = useState<CookingStats>(defaultStats);
   const [isSetupComplete, setIsSetupComplete] = useState(false);
@@ -265,14 +283,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const [profileData, pantryData, savedData, cookedData, statsData, setupData, historyData, learningData] =
         await Promise.all([
-          AsyncStorage.getItem("pantryswipe_profile"),
-          AsyncStorage.getItem("pantryswipe_pantry"),
-          AsyncStorage.getItem("pantryswipe_saved"),
-          AsyncStorage.getItem("pantryswipe_cooked"),
-          AsyncStorage.getItem("pantryswipe_stats"),
-          AsyncStorage.getItem("pantryswipe_setup_complete"),
-          AsyncStorage.getItem("pantryswipe_cooking_history"),
-          AsyncStorage.getItem("pantryswipe_learning"),
+          AsyncStorage.getItem(STORAGE_KEYS.PROFILE),
+          AsyncStorage.getItem(STORAGE_KEYS.PANTRY),
+          AsyncStorage.getItem(STORAGE_KEYS.SAVED),
+          AsyncStorage.getItem(STORAGE_KEYS.COOKED),
+          AsyncStorage.getItem(STORAGE_KEYS.STATS),
+          AsyncStorage.getItem(STORAGE_KEYS.SETUP_COMPLETE),
+          AsyncStorage.getItem(STORAGE_KEYS.COOKING_HISTORY),
+          AsyncStorage.getItem(STORAGE_KEYS.LEARNING),
         ]);
 
       const loadedProfile: UserProfile | undefined = profileData
@@ -329,17 +347,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateProfile = (updates: Partial<UserProfile>) => {
     const newProfile = { ...userProfile, ...updates };
     setUserProfile(newProfile);
-    saveData("pantryswipe_profile", newProfile);
+    saveData(STORAGE_KEYS.PROFILE, newProfile);
   };
 
   const completeSetup = () => {
     setIsSetupComplete(true);
-    saveData("pantryswipe_setup_complete", true);
+    saveData(STORAGE_KEYS.SETUP_COMPLETE, true);
     // Use functional update so we get the LATEST state (including any
     // changes from updateProfile called just before this in onboarding).
     setUserProfile((prev) => {
       const updated = { ...prev, setupComplete: true };
-      saveData("pantryswipe_profile", updated);
+      saveData(STORAGE_KEYS.PROFILE, updated);
       fetchLiveRecipes(updated);
       return updated;
     });
@@ -348,49 +366,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addToPantry = (item: PantryItem) => {
     const updated = [...pantryItems, item];
     setPantryItems(updated);
-    saveData("pantryswipe_pantry", updated);
+    saveData(STORAGE_KEYS.PANTRY, updated);
   };
 
   const removeFromPantry = (id: string) => {
     const updated = pantryItems.filter((i) => i.id !== id);
     setPantryItems(updated);
-    saveData("pantryswipe_pantry", updated);
+    saveData(STORAGE_KEYS.PANTRY, updated);
   };
 
   const updatePantryItem = (id: string, updates: Partial<PantryItem>) => {
     const updated = pantryItems.map((i) => (i.id === id ? { ...i, ...updates } : i));
     setPantryItems(updated);
-    saveData("pantryswipe_pantry", updated);
+    saveData(STORAGE_KEYS.PANTRY, updated);
   };
 
   const saveRecipe = (id: string) => {
     if (!savedRecipes.includes(id)) {
       const updated = [...savedRecipes, id];
       setSavedRecipes(updated);
-      saveData("pantryswipe_saved", updated);
+      saveData(STORAGE_KEYS.SAVED, updated);
     }
   };
 
   const unsaveRecipe = (id: string) => {
     const updated = savedRecipes.filter((r) => r !== id);
     setSavedRecipes(updated);
-    saveData("pantryswipe_saved", updated);
+    saveData(STORAGE_KEYS.SAVED, updated);
   };
 
   const markCooked = (id: string) => {
     if (!cookedRecipes.includes(id)) {
       const updated = [...cookedRecipes, id];
       setCookedRecipes(updated);
-      saveData("pantryswipe_cooked", updated);
+      saveData(STORAGE_KEYS.COOKED, updated);
+      const today = new Date().toISOString().split("T")[0];
       const newStats = {
         ...stats,
-        mealsCoooked: stats.mealsCoooked + 1,
+        mealsCooked: stats.mealsCooked + 1,
         xp: stats.xp + 50,
-        streak: stats.streak + 1,
+        streak: computeNewStreak(stats.streak, stats.lastCookedDate),
+        lastCookedDate: today,
         moneySaved: stats.moneySaved + 12,
       };
       setStats(newStats);
-      saveData("pantryswipe_stats", newStats);
+      saveData(STORAGE_KEYS.STATS, newStats);
     }
   };
 
@@ -412,27 +432,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     const newHistory = [...cookingHistory, entry];
     setCookingHistory(newHistory);
-    saveData("pantryswipe_cooking_history", newHistory);
+    saveData(STORAGE_KEYS.COOKING_HISTORY, newHistory);
 
     // 2. Mark as cooked (add to cookedRecipes array)
     const wasCooked = cookedRecipes.includes(recipe.id);
     if (!wasCooked) {
       const updated = [...cookedRecipes, recipe.id];
       setCookedRecipes(updated);
-      saveData("pantryswipe_cooked", updated);
+      saveData(STORAGE_KEYS.COOKED, updated);
     }
 
-    // 3. Update stats
+    // 3. Update stats — use date-aware streak logic so cooking multiple
+    //    times in one day only counts as one streak day, and missing a day
+    //    correctly resets the streak to 1.
     const newStats = {
       ...stats,
-      mealsCoooked: stats.mealsCoooked + 1,
+      mealsCooked: stats.mealsCooked + 1,
       xp: stats.xp + 50,
-      streak: stats.streak + 1,
+      streak: computeNewStreak(stats.streak, stats.lastCookedDate),
+      lastCookedDate: today,
       moneySaved: stats.moneySaved + 12,
-      lastCookedDate: new Date().toISOString(),
     };
     setStats(newStats);
-    saveData("pantryswipe_stats", newStats);
+    saveData(STORAGE_KEYS.STATS, newStats);
 
     // 4. Deduct ingredients from pantry
     const scaleFactor = servings / Math.max(1, recipe.servings);
@@ -469,7 +491,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Remove fully depleted items
     updatedPantry = updatedPantry.filter((p) => p.quantity > 0);
     setPantryItems(updatedPantry);
-    saveData("pantryswipe_pantry", updatedPantry);
+    saveData(STORAGE_KEYS.PANTRY, updatedPantry);
 
     return deducted;
   }, [cookingHistory, cookedRecipes, pantryItems, stats]);
@@ -521,7 +543,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ? { ...prev.saved, [cuisine]: (prev.saved[cuisine] ?? 0) + 1 }
           : prev.saved,
       };
-      saveData("pantryswipe_learning", updated);
+      saveData(STORAGE_KEYS.LEARNING, updated);
       return updated;
     });
   }, []);
