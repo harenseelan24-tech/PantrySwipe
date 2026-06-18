@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   Animated,
   Image,
@@ -8,18 +8,27 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { StatusBar } from "expo-status-bar";
+import { TextType } from "@/components/TextType";
+import { DecryptedText } from "@/components/DecryptedText";
 
 export default function WelcomeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [screenKey, setScreenKey] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenKey((k) => k + 1);
+    }, [])
+  );
 
   useEffect(() => {
     Animated.parallel([
@@ -51,8 +60,28 @@ export default function WelcomeScreen() {
           <View style={[styles.logoIcon, { backgroundColor: colors.saffron }]}>
             <Text style={styles.logoEmoji}>🍳</Text>
           </View>
-          <Text style={styles.appName}>PantrySwipe</Text>
-          <Text style={styles.tagline}>Cook what you already have.</Text>
+
+          <TextType
+            key={`title-${screenKey}`}
+            text="PantrySwipe"
+            typingSpeed={90}
+            loop={false}
+            showCursor={true}
+            cursorCharacter="|"
+            cursorBlinkDuration={0.5}
+            style={styles.appName}
+          />
+
+          <DecryptedText
+            key={`tagline-${screenKey}`}
+            text="Cook what you already have."
+            animateOn="view"
+            speed={55}
+            maxIterations={14}
+            sequential={true}
+            revealDirection="start"
+            style={styles.tagline}
+          />
         </View>
 
         <View style={styles.ctaContainer}>
