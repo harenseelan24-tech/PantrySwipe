@@ -56,6 +56,10 @@ export default function SocialScreen() {
   const [commentModalPost, setCommentModalPost] = useState<SocialPost | null>(null);
   const [newComment, setNewComment] = useState("");
   const [shareToast, setShareToast] = useState(false);
+  const [showCreatePost, setShowCreatePost] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [newCaption, setNewCaption] = useState("");
+  const [notifCount] = useState(3);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
@@ -189,12 +193,29 @@ export default function SocialScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPadding + 6, borderBottomColor: colors.border }]}>
+        {/* Left — heart notifications */}
+        <TouchableOpacity
+          style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowNotifications(true)}
+        >
+          <Feather name="heart" size={18} color={colors.foreground} />
+          {notifCount > 0 && (
+            <View style={[styles.notifBadge, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.notifBadgeText, { fontFamily: "Inter_700Bold" }]}>{notifCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Center — title */}
         <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Social</Text>
-        <View style={styles.headerRight}>
-          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="camera" size={18} color={colors.foreground} />
-          </TouchableOpacity>
-        </View>
+
+        {/* Right — new post */}
+        <TouchableOpacity
+          style={[styles.iconBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+          onPress={() => { setNewCaption(""); setShowCreatePost(true); }}
+        >
+          <Feather name="plus" size={20} color={colors.primaryForeground} />
+        </TouchableOpacity>
       </View>
 
       {/* Filter panel */}
@@ -260,6 +281,96 @@ export default function SocialScreen() {
         </View>
       )}
 
+      {/* Create Post Modal */}
+      <Modal visible={showCreatePost} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowCreatePost(false)}>
+        <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.createPostHeader}>
+            <TouchableOpacity onPress={() => setShowCreatePost(false)}>
+              <Text style={[styles.createPostCancel, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>New Post</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (!newCaption.trim()) return;
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                const newPost: SocialPost = {
+                  id: `s_user_${Date.now()}`,
+                  username: "you",
+                  userAvatar: "Y",
+                  image: null,
+                  caption: newCaption.trim(),
+                  likes: 0,
+                  comments: 0,
+                  timeAgo: "just now",
+                  liked: false,
+                  saved: false,
+                  cuisine: activeCuisine !== "All" ? activeCuisine : undefined,
+                };
+                setPosts((prev) => [newPost, ...prev]);
+                setShowCreatePost(false);
+                setNewCaption("");
+              }}
+            >
+              <Text style={[styles.createPostShare, { color: newCaption.trim() ? colors.primary : colors.textMuted, fontFamily: "Inter_700Bold" }]}>Share</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.createPostBody, { borderColor: colors.border }]}>
+            <View style={[styles.createPostAvatar, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.userAvatarText, { fontFamily: "Inter_700Bold" }]}>Y</Text>
+            </View>
+            <TextInput
+              style={[styles.createPostInput, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}
+              placeholder="Share what you cooked…"
+              placeholderTextColor={colors.textMuted}
+              value={newCaption}
+              onChangeText={setNewCaption}
+              multiline
+              autoFocus
+              maxLength={280}
+            />
+          </View>
+
+          <View style={[styles.createPostFooter, { borderTopColor: colors.border }]}>
+            <View style={[styles.createPostChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Feather name="image" size={14} color={colors.textSecondary} />
+              <Text style={[{ fontSize: 13, color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>Photo</Text>
+            </View>
+            <View style={[styles.createPostChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Feather name="tag" size={14} color={colors.textSecondary} />
+              <Text style={[{ fontSize: 13, color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>Recipe</Text>
+            </View>
+            <Text style={[{ fontSize: 12, color: colors.textMuted, fontFamily: "Inter_400Regular", marginLeft: "auto" }]}>{newCaption.length}/280</Text>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Notifications Modal */}
+      <Modal visible={showNotifications} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowNotifications(false)}>
+        <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Notifications</Text>
+          {[
+            { icon: "heart", color: "#E84040", user: "kimchi_queen", action: "liked your post", time: "2m ago" },
+            { icon: "message-circle", color: "#5B8EF5", user: "pasta_lover", action: "commented: \"Looks incredible!\"", time: "15m ago" },
+            { icon: "user-plus", color: "#4CAF76", user: "ramen_master", action: "started following you", time: "1h ago" },
+          ].map((n, i) => (
+            <View key={i} style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.notifIcon, { backgroundColor: n.color + "20" }]}>
+                <Feather name={n.icon as any} size={16} color={n.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[{ fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
+                  <Text style={{ fontFamily: "Inter_700Bold" }}>@{n.user} </Text>{n.action}
+                </Text>
+                <Text style={[{ fontSize: 12, color: colors.textMuted, fontFamily: "Inter_400Regular", marginTop: 2 }]}>{n.time}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      </Modal>
+
       {/* Comment Modal */}
       <Modal visible={!!commentModalPost} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setCommentModalPost(null)}>
         <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
@@ -315,10 +426,21 @@ export default function SocialScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1 },
-  headerTitle: { fontSize: 26, letterSpacing: -0.3 },
-  headerRight: { flexDirection: "row", gap: 10 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1 },
+  headerTitle: { fontSize: 20, letterSpacing: -0.3 },
   iconBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  notifBadge: { position: "absolute", top: -3, right: -3, width: 16, height: 16, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  notifBadgeText: { fontSize: 9, color: "#fff" },
+  createPostHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 16 },
+  createPostCancel: { fontSize: 15 },
+  createPostShare: { fontSize: 15 },
+  createPostBody: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingVertical: 16, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
+  createPostAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  createPostInput: { flex: 1, fontSize: 16, lineHeight: 22, minHeight: 80 },
+  createPostFooter: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  createPostChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, borderWidth: 1 },
+  notifRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  notifIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   filterPanel: { borderBottomWidth: 1 },
   discoveryTabsRow: { height: 46, flexShrink: 0 },
   discoveryTabs: { paddingHorizontal: 20, flexDirection: "row", alignItems: "center" },
