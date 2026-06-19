@@ -53,8 +53,9 @@ const ALLERGEN_OPTIONS = ["Peanuts", "Tree Nuts", "Dairy", "Gluten", "Eggs", "Sh
 const CUISINE_OPTIONS = ["Italian", "Japanese", "Korean", "American", "Indian", "Mediterranean", "Chinese", "Thai", "Mexican", "French", "Vietnamese", "Middle Eastern", "Singaporean"];
 const GOAL_OPTIONS = ["Build Muscle", "Eat Healthier", "Save Money", "Cook Faster", "Explore Cuisines", "Cook for Others", "Meal Prep", "Reduce Waste", "Lose Weight"];
 const SKILL_OPTIONS = ["Beginner", "Home Cook", "Confident", "Advanced"];
+const PROTEIN_OPTIONS_LIST = ["Chicken", "Beef", "Pork", "Fish", "Lamb", "Seafood", "Turkey", "Tofu", "Eggs", "Duck"];
 
-type ModalType = "name" | "diet" | "allergens" | "household" | "budget" | "cuisine" | "goal" | "skill" | null;
+type ModalType = "name" | "diet" | "allergens" | "proteins" | "household" | "budget" | "cuisine" | "goal" | "skill" | null;
 
 export default function SettingsScreen() {
   const colors = useColors();
@@ -70,6 +71,7 @@ export default function SettingsScreen() {
   const [editName, setEditName] = useState(userProfile.name);
   const [editDiet, setEditDiet] = useState<string[]>(userProfile.dietType);
   const [editAllergens, setEditAllergens] = useState<string[]>(userProfile.allergies);
+  const [editProteins, setEditProteins] = useState<string[]>(userProfile.proteinPreferences ?? []);
   const [editHousehold, setEditHousehold] = useState(userProfile.householdSize);
   const [editBudget, setEditBudget] = useState(String(userProfile.weeklyBudget));
   const [editCuisines, setEditCuisines] = useState<string[]>(userProfile.cuisinePreferences);
@@ -101,6 +103,7 @@ export default function SettingsScreen() {
     if (type === "name")      setEditName(userProfile.name);
     if (type === "diet")      setEditDiet(userProfile.dietType);
     if (type === "allergens") setEditAllergens(userProfile.allergies);
+    if (type === "proteins")  setEditProteins(userProfile.proteinPreferences ?? []);
     if (type === "household") setEditHousehold(userProfile.householdSize);
     if (type === "budget")    setEditBudget(String(userProfile.weeklyBudget || ""));
     if (type === "cuisine")   setEditCuisines(userProfile.cuisinePreferences);
@@ -120,6 +123,7 @@ export default function SettingsScreen() {
     setActiveModal(null);
   };
   const saveAllergens = () => { updateProfile({ allergies: editAllergens }); setActiveModal(null); };
+  const saveProteins  = () => { updateProfile({ proteinPreferences: editProteins }); setActiveModal(null); };
   const saveHousehold = () => { updateProfile({ householdSize: editHousehold }); setActiveModal(null); };
   const saveBudget = () => { updateProfile({ weeklyBudget: parseFloat(editBudget) || 0 }); setActiveModal(null); };
   const saveCuisines = () => { updateProfile({ cuisinePreferences: editCuisines }); setActiveModal(null); };
@@ -265,6 +269,7 @@ export default function SettingsScreen() {
 
   // ── Derived display values ─────────────────────────────────────────────────
   const allergenDisplay = userProfile.allergies.length > 0 ? userProfile.allergies.join(", ") : "None";
+  const proteinDisplay  = (userProfile.proteinPreferences?.length ?? 0) > 0 ? userProfile.proteinPreferences.join(", ") : "All proteins";
   const dietDisplay = userProfile.dietType.join(", ");
   const cuisineDisplay = userProfile.cuisinePreferences.length > 0
     ? `${userProfile.cuisinePreferences.length} selected`
@@ -334,6 +339,7 @@ export default function SettingsScreen() {
           <SettingRow icon="user"         label="Name"                 value={userProfile.name}         onPress={() => openModal("name")} />
           <SettingRow icon="heart"        label="Dietary Preferences"  value={dietDisplay}              onPress={() => openModal("diet")} />
           <SettingRow icon="alert-circle" label="Allergens"            value={allergenDisplay}          onPress={() => openModal("allergens")} />
+          <SettingRow icon="layers"       label="Protein Preferences"  value={proteinDisplay}           onPress={() => openModal("proteins")} />
           <SettingRow icon="users"        label="Household Size"       value={`${userProfile.householdSize} people`} onPress={() => openModal("household")} />
           <SettingRow icon="dollar-sign" label="Weekly Budget"        value={budgetDisplay}            onPress={() => openModal("budget")} last />
         </View>
@@ -464,6 +470,16 @@ export default function SettingsScreen() {
           options={ALLERGEN_OPTIONS}
           selected={editAllergens}
           onToggle={(v) => setEditAllergens((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])}
+        />
+      </Sheet>
+
+      {/* Protein preferences */}
+      <Sheet visible={activeModal === "proteins"} onClose={() => setActiveModal(null)} title="Protein Preferences" onSave={saveProteins}>
+        <Text style={[styles.sheetHint, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Only recipes with these proteins will appear in your deck. Leave blank to show all.</Text>
+        <MultiSelect
+          options={PROTEIN_OPTIONS_LIST}
+          selected={editProteins}
+          onToggle={(v) => setEditProteins((prev) => prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])}
         />
       </Sheet>
 

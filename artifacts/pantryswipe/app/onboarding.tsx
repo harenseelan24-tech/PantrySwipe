@@ -310,7 +310,7 @@ export default function OnboardingScreen() {
   };
 
   const goNext = () => {
-    if (step === 7 && selectedCuisines.length === 0) { setCuisineError(true); return; }
+    if (step === 8 && selectedCuisines.length === 0) { setCuisineError(true); return; }
     if (!isStepValid(step)) { setShowErrors(true); return; }
     setCuisineError(false);
     setShowErrors(false);
