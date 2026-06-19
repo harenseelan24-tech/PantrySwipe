@@ -21,21 +21,7 @@ import { MOCK_SOCIAL_POSTS, SocialPost } from "@/data/mockData";
 import { getSocialImageSource } from "@/constants/recipeImages";
 
 const DISCOVERY_TABS = ["For You", "Following", "Trending", "Near Me"];
-
-const ALL_CUISINES = [
-  { id: "Italian",     emoji: "🍝" },
-  { id: "Japanese",    emoji: "🍣" },
-  { id: "Korean",      emoji: "🥘" },
-  { id: "Indian",      emoji: "🍛" },
-  { id: "Mexican",     emoji: "🌮" },
-  { id: "Thai",        emoji: "🍲" },
-  { id: "Chinese",     emoji: "🥡" },
-  { id: "American",    emoji: "🍔" },
-  { id: "French",      emoji: "🥐" },
-  { id: "Mediterranean", emoji: "🫒" },
-  { id: "Vietnamese",  emoji: "🍜" },
-  { id: "Vegan",       emoji: "🥗" },
-];
+const CUISINE_FILTERS = ["All", "Italian", "Japanese", "Korean", "Indian", "Mexican", "Thai", "Vegan"];
 
 type Comment = { id: string; user: string; text: string; avatar: string; timeAgo: string };
 
@@ -44,10 +30,18 @@ const SEED_COMMENTS: Record<string, Comment[]> = {
     { id: "c1", user: "pasta_lover", text: "This looks incredible! What brand of pancetta do you use?", avatar: "P", timeAgo: "1h ago" },
     { id: "c2", user: "homecook22", text: "Made this last night, absolute perfection 🍝", avatar: "H", timeAgo: "45m ago" },
   ],
-  s2: [{ id: "c1", user: "seafood_fan", text: "The garlic butter sauce really makes it!", avatar: "S", timeAgo: "2h ago" }],
+  s2: [
+    { id: "c1", user: "seafood_fan", text: "The garlic butter sauce really makes it!", avatar: "S", timeAgo: "2h ago" },
+  ],
   s3: [],
   s4: [{ id: "c1", user: "kfoodie", text: "Stone pot is a MUST, you're 100% right!", avatar: "K", timeAgo: "3h ago" }],
   s5: [],
+};
+
+const CUISINE_EMOJIS: Record<string, string> = {
+  Italian: "🍝", Japanese: "🍜", Korean: "🥘", Mexican: "🌮",
+  Indian: "🍛", Chinese: "🥡", Thai: "🍲", American: "🍔",
+  French: "🥐", Mediterranean: "🫒", Vietnamese: "🍜", Singaporean: "🦀",
 };
 
 export default function SocialScreen() {
@@ -55,11 +49,8 @@ export default function SocialScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { liveRecipes } = useApp();
-
   const [activeTab, setActiveTab] = useState("For You");
-  const [selectedCuisines, setSelectedCuisines] = useState<string[]>([]);
-  const [tempCuisines, setTempCuisines] = useState<string[]>([]);
-  const [cuisineModalOpen, setCuisineModalOpen] = useState(false);
+  const [activeCuisine, setActiveCuisine] = useState("All");
   const [posts, setPosts] = useState<SocialPost[]>(MOCK_SOCIAL_POSTS);
   const [comments, setComments] = useState<Record<string, Comment[]>>(SEED_COMMENTS);
   const [commentModalPost, setCommentModalPost] = useState<SocialPost | null>(null);
@@ -86,35 +77,19 @@ export default function SocialScreen() {
 
   const handleAddComment = () => {
     if (!newComment.trim() || !commentModalPost) return;
-    const c: Comment = { id: Date.now().toString(), user: "you", text: newComment.trim(), avatar: "Y", timeAgo: "just now" };
+    const c: Comment = {
+      id: Date.now().toString(),
+      user: "you",
+      text: newComment.trim(),
+      avatar: "Y",
+      timeAgo: "just now",
+    };
     setComments((prev) => ({ ...prev, [commentModalPost.id]: [...(prev[commentModalPost.id] || []), c] }));
     setPosts((prev) => prev.map((p) => p.id === commentModalPost.id ? { ...p, comments: p.comments + 1 } : p));
     setNewComment("");
   };
 
-  const openCuisineModal = () => {
-    setTempCuisines([...selectedCuisines]);
-    setCuisineModalOpen(true);
-  };
-
-  const applyFilter = () => {
-    setSelectedCuisines([...tempCuisines]);
-    setCuisineModalOpen(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  };
-
-  const toggleTempCuisine = (id: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setTempCuisines((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
-  };
-
   const formatCount = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
-
-  const cuisineLabel = selectedCuisines.length === 0
-    ? "All Cuisines"
-    : selectedCuisines.length === 1
-      ? selectedCuisines[0]
-      : `${selectedCuisines.length} cuisines`;
 
   const renderPost = ({ item, index }: { item: SocialPost; index: number }) => {
     const linkedRecipe = item.recipeId
@@ -124,8 +99,8 @@ export default function SocialScreen() {
     const postComments = comments[item.id] || [];
 
     return (
-      <View style={[styles.postCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {/* ── Post Header ── */}
+      <View style={[styles.postCard, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
+        {/* Header */}
         <View style={styles.postHeader}>
           <View style={[styles.userAvatar, { backgroundColor: colors.primary }]}>
             <Text style={[styles.userAvatarText, { fontFamily: "Inter_700Bold" }]}>{item.userAvatar}</Text>
@@ -134,75 +109,60 @@ export default function SocialScreen() {
             <Text style={[styles.username, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>@{item.username}</Text>
             <Text style={[styles.timeAgo, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{item.timeAgo}</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.followBtn, { backgroundColor: colors.primary + "18", borderColor: colors.primary }]}
-            accessibilityLabel={`Follow ${item.username}`}
-          >
+          <TouchableOpacity style={[styles.followBtn, { borderColor: colors.primary }]}>
             <Text style={[styles.followBtnText, { color: colors.primary, fontFamily: "Inter_700Bold" }]}>Follow</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── Image ── */}
-        <View style={[styles.postImageWrap, { backgroundColor: colors.muted }]}>
+        {/* Image with overlaid actions */}
+        <View style={[styles.postImageContainer, { backgroundColor: colors.muted }]}>
           {imageSource ? (
-            <Image source={imageSource} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <Image source={imageSource} style={styles.postImage} resizeMode="cover" />
           ) : (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <Text style={{ fontSize: 48 }}>🍽</Text>
+              <Text style={{ fontSize: 52 }}>{CUISINE_EMOJIS[item.recipeName?.split(" ").pop() ?? ""] ?? "🍽"}</Text>
+              <Text style={{ color: colors.textMuted, fontSize: 13, fontFamily: "Inter_500Medium" }}>{item.recipeName ?? "Food"}</Text>
             </View>
           )}
-        </View>
-
-        {/* ── Actions ── */}
-        <View style={[styles.actionsBar, { borderTopColor: colors.border }]}>
-          <View style={styles.actionsLeft}>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => toggleLike(item.id)}
-              accessibilityLabel={`Like post, ${formatCount(item.likes)} likes`}
-            >
-              <Feather name="heart" size={22} color={item.liked ? "#E84040" : colors.foreground} />
-              <Text style={[styles.actionLabel, { color: item.liked ? "#E84040" : colors.textSecondary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
-                {formatCount(item.likes)}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => setCommentModalPost(item)}
-              accessibilityLabel={`Comment, ${postComments.length || item.comments} comments`}
-            >
-              <Feather name="message-circle" size={22} color={colors.foreground} />
-              <Text style={[styles.actionLabel, { color: colors.textSecondary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
-                {postComments.length || item.comments}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionBtn} onPress={handleShare} accessibilityLabel="Share post">
-              <Feather name="share-2" size={22} color={colors.foreground} />
-            </TouchableOpacity>
+          {/* Actions overlaid on bottom of image */}
+          <View style={styles.actionsOverlay}>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity style={styles.actionItem} onPress={() => toggleLike(item.id)}>
+                <View style={[styles.actionPill, { backgroundColor: item.liked ? "#E84040" : "rgba(0,0,0,0.45)" }]}>
+                  <Feather name="heart" size={18} color="#fff" />
+                  <Text style={[styles.actionCount, { fontFamily: "SpaceGrotesk_600SemiBold" }]}>{formatCount(item.likes)}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionItem} onPress={() => { setCommentModalPost(item); }}>
+                <View style={[styles.actionPill, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+                  <Feather name="message-circle" size={18} color="#fff" />
+                  <Text style={[styles.actionCount, { fontFamily: "SpaceGrotesk_600SemiBold" }]}>{(postComments.length || item.comments)}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionItem} onPress={handleShare}>
+                <View style={[styles.actionPill, { backgroundColor: "rgba(0,0,0,0.45)" }]}>
+                  <Feather name="share-2" size={18} color="#fff" />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionItem} onPress={() => toggleSave(item.id)}>
+                <View style={[styles.actionPill, { backgroundColor: item.saved ? colors.saveBlue : "rgba(0,0,0,0.45)" }]}>
+                  <Feather name="bookmark" size={18} color="#fff" />
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
-
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => toggleSave(item.id)}
-            accessibilityLabel={item.saved ? "Unsave post" : "Save post"}
-          >
-            <Feather name="bookmark" size={22} color={item.saved ? colors.saveBlue : colors.foreground} />
-          </TouchableOpacity>
         </View>
 
-        {/* ── Caption + recipe chip ── */}
+        {/* Caption */}
         <View style={styles.captionContainer}>
           <Text style={[styles.caption, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}>
-            <Text style={[{ fontFamily: "Inter_700Bold", color: colors.foreground }]}>@{item.username} </Text>
+            <Text style={[styles.captionUsername, { fontFamily: "Inter_700Bold" }]}>@{item.username} </Text>
             {item.caption}
           </Text>
           {item.recipeName && (
             <TouchableOpacity
-              style={[styles.recipeChip, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "40" }]}
+              style={[styles.recipeChip, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "35" }]}
               onPress={() => item.recipeId && router.push(`/recipe/${item.recipeId}`)}
-              accessibilityLabel={`View recipe: ${item.recipeName}`}
             >
               <Feather name="book-open" size={12} color={colors.primary} />
               <Text style={[styles.recipeChipText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>{item.recipeName}</Text>
@@ -215,97 +175,53 @@ export default function SocialScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-
-      {/* ══ Header ══ */}
-      <View style={[styles.header, { paddingTop: topPadding + 4, borderBottomColor: colors.border }]}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPadding + 6, borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Social</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-            accessibilityLabel="Open camera"
-          >
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Feather name="camera" size={18} color={colors.foreground} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ══ Discovery segment tabs (full-width, no cutoff) ══ */}
-      <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        {DISCOVERY_TABS.map((tab) => {
-          const isActive = activeTab === tab;
-          return (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tabItem, isActive && { borderBottomColor: colors.primary, borderBottomWidth: 2.5 }]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setActiveTab(tab);
-              }}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isActive }}
-            >
-              <Text style={[
-                styles.tabText,
-                { color: isActive ? colors.primary : colors.textSecondary, fontFamily: isActive ? "Inter_700Bold" : "Inter_500Medium" },
-              ]}>
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {/* Discovery tabs */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.discoveryTabs}>
+        {DISCOVERY_TABS.map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={[
+              styles.discoveryTab,
+              activeTab === tab
+                ? { backgroundColor: colors.primary }
+                : { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+            ]}
+            onPress={() => setActiveTab(tab)}
+          >
+            <Text style={[
+              styles.discoveryTabText,
+              {
+                color: activeTab === tab ? colors.primaryForeground : colors.foreground,
+                fontFamily: activeTab === tab ? "Inter_700Bold" : "Inter_500Medium",
+              },
+            ]}>{tab}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
-      {/* ══ Cuisine filter bar ══ */}
-      <View style={[styles.filterBar, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          style={[
-            styles.cuisineFilterBtn,
-            {
-              backgroundColor: selectedCuisines.length > 0 ? colors.primary : colors.card,
-              borderColor: selectedCuisines.length > 0 ? colors.primary : colors.border,
-            },
-          ]}
-          onPress={openCuisineModal}
-          accessibilityLabel={`Filter by cuisine: ${cuisineLabel}`}
-        >
-          <Feather name="sliders" size={14} color={selectedCuisines.length > 0 ? colors.primaryForeground : colors.foreground} />
-          <Text style={[
-            styles.cuisineFilterBtnText,
-            {
-              color: selectedCuisines.length > 0 ? colors.primaryForeground : colors.foreground,
-              fontFamily: "Inter_600SemiBold",
-            },
-          ]}>
-            {cuisineLabel}
-          </Text>
-          <Feather name="chevron-down" size={14} color={selectedCuisines.length > 0 ? colors.primaryForeground : colors.textSecondary} />
-        </TouchableOpacity>
+      {/* Cuisine filter */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cuisineFilters}>
+        {CUISINE_FILTERS.map((c) => (
+          <TouchableOpacity
+            key={c}
+            style={[styles.cuisineFilter, { backgroundColor: activeCuisine === c ? colors.primary : colors.card, borderColor: activeCuisine === c ? colors.primary : colors.border }]}
+            onPress={() => setActiveCuisine(c)}
+          >
+            <Text style={[styles.cuisineFilterText, { color: activeCuisine === c ? colors.primaryForeground : colors.foreground, fontFamily: "Inter_500Medium" }]}>{c}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
-        {/* Active cuisine chips (scrollable) */}
-        {selectedCuisines.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeCuisineChips}>
-            {selectedCuisines.map((c) => {
-              const meta = ALL_CUISINES.find((x) => x.id === c);
-              return (
-                <TouchableOpacity
-                  key={c}
-                  style={[styles.activeChip, { backgroundColor: colors.primary + "20", borderColor: colors.primary + "50" }]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedCuisines((prev) => prev.filter((x) => x !== c));
-                  }}
-                >
-                  <Text style={{ fontSize: 12 }}>{meta?.emoji ?? "🍽"}</Text>
-                  <Text style={[styles.activeChipText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>{c}</Text>
-                  <Feather name="x" size={11} color={colors.primary} />
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-      </View>
-
-      {/* ══ Feed ══ */}
       <FlatList
         data={posts}
         keyExtractor={(i) => i.id}
@@ -314,129 +230,19 @@ export default function SocialScreen() {
         contentContainerStyle={styles.feedContent}
       />
 
-      {/* ══ Share toast ══ */}
+      {/* Share toast */}
       {shareToast && (
-        <View style={[styles.toast, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Feather name="check-circle" size={16} color={colors.primary} />
-          <Text style={[styles.toastText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Copied to clipboard!</Text>
+        <View style={[styles.shareToast, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Feather name="check" size={16} color={colors.primary} />
+          <Text style={[styles.shareToastText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Link copied to clipboard!</Text>
         </View>
       )}
 
-      {/* ══ Cuisine picker modal ══ */}
-      <Modal
-        visible={cuisineModalOpen}
-        animationType="slide"
-        presentationStyle="formSheet"
-        onRequestClose={() => setCuisineModalOpen(false)}
-      >
-        <View style={[styles.cuisineModal, { backgroundColor: colors.background }]}>
-          {/* Handle */}
-          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-
-          {/* Title row */}
-          <View style={styles.cuisineModalHeader}>
-            <Text style={[styles.cuisineModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
-              Filter by Cuisine
-            </Text>
-            <TouchableOpacity onPress={() => setCuisineModalOpen(false)} accessibilityLabel="Close">
-              <Feather name="x" size={22} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.cuisineModalSubtitle, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
-            Pick the cuisines you want to see in your feed
-          </Text>
-
-          {/* All option */}
-          <TouchableOpacity
-            style={[
-              styles.cuisineAllRow,
-              { backgroundColor: tempCuisines.length === 0 ? colors.primary + "18" : colors.card, borderColor: tempCuisines.length === 0 ? colors.primary : colors.border },
-            ]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setTempCuisines([]);
-            }}
-          >
-            <Text style={{ fontSize: 20 }}>🌍</Text>
-            <Text style={[styles.cuisineAllText, { color: tempCuisines.length === 0 ? colors.primary : colors.foreground, fontFamily: tempCuisines.length === 0 ? "Inter_700Bold" : "Inter_500Medium" }]}>
-              All Cuisines
-            </Text>
-            {tempCuisines.length === 0 && (
-              <View style={[styles.cuisineCheckmark, { backgroundColor: colors.primary }]}>
-                <Feather name="check" size={12} color="#fff" />
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* Cuisine grid */}
-          <ScrollView contentContainerStyle={styles.cuisineGrid} showsVerticalScrollIndicator={false}>
-            {ALL_CUISINES.map((cuisine) => {
-              const isSelected = tempCuisines.includes(cuisine.id);
-              return (
-                <TouchableOpacity
-                  key={cuisine.id}
-                  style={[
-                    styles.cuisineGridItem,
-                    {
-                      backgroundColor: isSelected ? colors.primary + "18" : colors.card,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                    },
-                  ]}
-                  onPress={() => toggleTempCuisine(cuisine.id)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected }}
-                  accessibilityLabel={cuisine.id}
-                >
-                  <Text style={styles.cuisineGridEmoji}>{cuisine.emoji}</Text>
-                  <Text style={[styles.cuisineGridLabel, { color: isSelected ? colors.primary : colors.foreground, fontFamily: isSelected ? "Inter_700Bold" : "Inter_500Medium" }]}>
-                    {cuisine.id}
-                  </Text>
-                  {isSelected && (
-                    <View style={[styles.cuisineCheckmark, { backgroundColor: colors.primary, position: "absolute", top: 8, right: 8 }]}>
-                      <Feather name="check" size={10} color="#fff" />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Apply button */}
-          <View style={[styles.cuisineModalFooter, { borderTopColor: colors.border, paddingBottom: insets.bottom + 8 }]}>
-            {tempCuisines.length > 0 && (
-              <TouchableOpacity
-                style={[styles.clearBtn, { borderColor: colors.border }]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setTempCuisines([]);
-                }}
-              >
-                <Text style={[styles.clearBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Clear</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={[styles.applyBtn, { backgroundColor: colors.primary, flex: 1 }]}
-              onPress={applyFilter}
-            >
-              <Text style={[styles.applyBtnText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>
-                {tempCuisines.length === 0 ? "Show All" : `Show ${tempCuisines.length} Cuisine${tempCuisines.length > 1 ? "s" : ""}`}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ══ Comment modal ══ */}
+      {/* Comment Modal */}
       <Modal visible={!!commentModalPost} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setCommentModalPost(null)}>
         <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <View style={styles.commentModalHeaderRow}>
-            <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Comments</Text>
-            <TouchableOpacity onPress={() => setCommentModalPost(null)} accessibilityLabel="Close comments">
-              <Feather name="x" size={22} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
+          <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Comments</Text>
 
           <FlatList
             data={comments[commentModalPost?.id || ""] || []}
@@ -444,7 +250,7 @@ export default function SocialScreen() {
             contentContainerStyle={{ gap: 14, paddingBottom: 20 }}
             ListEmptyComponent={
               <View style={styles.noComments}>
-                <Text style={{ fontSize: 36 }}>💬</Text>
+                <Text style={{ fontSize: 32 }}>💬</Text>
                 <Text style={[styles.noCommentsText, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>No comments yet. Be first!</Text>
               </View>
             }
@@ -462,7 +268,7 @@ export default function SocialScreen() {
             )}
           />
 
-          <View style={[styles.commentInputRow, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: insets.bottom + 8 }]}>
+          <View style={[styles.commentInput, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <TextInput
               style={[styles.commentInputText, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}
               placeholder="Add a comment…"
@@ -472,10 +278,9 @@ export default function SocialScreen() {
               multiline
             />
             <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: newComment.trim() ? colors.primary : colors.muted }]}
+              style={[styles.commentSendBtn, { backgroundColor: newComment.trim() ? colors.primary : colors.muted }]}
               onPress={handleAddComment}
               disabled={!newComment.trim()}
-              accessibilityLabel="Send comment"
             >
               <Feather name="send" size={16} color={newComment.trim() ? colors.primaryForeground : colors.textMuted} />
             </TouchableOpacity>
@@ -488,140 +293,52 @@ export default function SocialScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
-  // ── Header ──
-  header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1,
-  },
-  headerTitle: { fontSize: 28, letterSpacing: -0.5 },
-  headerActions: { flexDirection: "row", gap: 10 },
-  iconBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-
-  // ── Discovery tabs (full-width segment control) ──
-  tabBar: {
-    flexDirection: "row", height: 48, borderBottomWidth: 1,
-  },
-  tabItem: {
-    flex: 1, alignItems: "center", justifyContent: "center", borderBottomWidth: 2.5, borderBottomColor: "transparent",
-  },
-  tabText: { fontSize: 13 },
-
-  // ── Cuisine filter bar ──
-  filterBar: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
-    paddingVertical: 10, gap: 10, borderBottomWidth: 1, minHeight: 54,
-    flexWrap: "wrap",
-  },
-  cuisineFilterBtn: {
-    flexDirection: "row", alignItems: "center", gap: 7,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100, borderWidth: 1,
-  },
-  cuisineFilterBtnText: { fontSize: 13 },
-  activeCuisineChips: { gap: 6, alignItems: "center" },
-  activeChip: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1,
-  },
-  activeChipText: { fontSize: 12 },
-
-  // ── Feed ──
-  feedContent: { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 110, gap: 16 },
-
-  // ── Post card ──
-  postCard: { borderRadius: 20, borderWidth: 1, overflow: "hidden" },
-  postHeader: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    paddingHorizontal: 14, paddingVertical: 13,
-  },
-  userAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  userAvatarText: { color: "#fff", fontSize: 16 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingBottom: 12, borderBottomWidth: 1 },
+  headerTitle: { fontSize: 26, letterSpacing: -0.3 },
+  headerRight: { flexDirection: "row", gap: 10 },
+  iconBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  discoveryTabs: { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: "center" },
+  discoveryTab: { paddingVertical: 7, paddingHorizontal: 16, borderRadius: 100 },
+  discoveryTabText: { fontSize: 14 },
+  cuisineFilters: { paddingHorizontal: 20, gap: 8, paddingVertical: 10, alignItems: "center", height: 50 },
+  cuisineFilter: { height: 30, paddingHorizontal: 14, borderRadius: 100, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  cuisineFilterText: { fontSize: 12 },
+  feedContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 100, gap: 16 },
+  postCard: { borderRadius: 18, overflow: "hidden" },
+  postHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  userAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  userAvatarText: { color: "#fff", fontSize: 15 },
   username: { fontSize: 14 },
-  timeAgo: { fontSize: 12, marginTop: 1 },
-  followBtn: {
-    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100, borderWidth: 1.5,
-    minWidth: 72, alignItems: "center",
-  },
+  timeAgo: { fontSize: 12 },
+  followBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 100, borderWidth: 1.5 },
   followBtnText: { fontSize: 13 },
-  postImageWrap: { width: "100%", aspectRatio: 4 / 3 },
-
-  // ── Actions below image ──
-  actionsBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 14, paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  actionsLeft: { flexDirection: "row", alignItems: "center" },
-  actionBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    minWidth: 44, minHeight: 44, paddingHorizontal: 8, justifyContent: "center",
-  },
-  actionLabel: { fontSize: 14 },
-
-  // ── Caption ──
-  captionContainer: { paddingHorizontal: 14, paddingBottom: 14, paddingTop: 2, gap: 8 },
-  caption: { fontSize: 14, lineHeight: 21 },
-  recipeChip: {
-    flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start",
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100, borderWidth: 1,
-  },
+  postImageContainer: { width: "100%", aspectRatio: 4 / 3, alignItems: "center", justifyContent: "center" },
+  postImage: { width: "100%", height: "100%", position: "absolute" },
+  actionsOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 14, paddingBottom: 12, paddingTop: 40 },
+  actionsRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  actionItem: { flexDirection: "row", alignItems: "center" },
+  actionPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 100 },
+  actionCount: { fontSize: 13, color: "#fff" },
+  captionContainer: { paddingHorizontal: 16, paddingBottom: 14, gap: 8 },
+  caption: { fontSize: 14, lineHeight: 20 },
+  captionUsername: { fontSize: 14 },
+  recipeChip: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, borderWidth: 1 },
   recipeChipText: { fontSize: 12 },
-
-  // ── Toast ──
-  toast: {
-    position: "absolute", bottom: 100, alignSelf: "center",
-    flexDirection: "row", alignItems: "center", gap: 8,
-    paddingHorizontal: 20, paddingVertical: 13, borderRadius: 100, borderWidth: 1,
-  },
-  toastText: { fontSize: 14 },
-
-  // ── Cuisine modal ──
-  cuisineModal: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
-  cuisineModalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
-  cuisineModalTitle: { fontSize: 22 },
-  cuisineModalSubtitle: { fontSize: 14, marginBottom: 16 },
-  cuisineAllRow: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    padding: 14, borderRadius: 16, borderWidth: 1, marginBottom: 16,
-  },
-  cuisineAllText: { flex: 1, fontSize: 16 },
-  cuisineCheckmark: { width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
-  cuisineGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, paddingBottom: 20 },
-  cuisineGridItem: {
-    width: "30%", aspectRatio: 1, borderRadius: 16, borderWidth: 1,
-    alignItems: "center", justifyContent: "center", gap: 6, padding: 8,
-  },
-  cuisineGridEmoji: { fontSize: 30 },
-  cuisineGridLabel: { fontSize: 11, textAlign: "center" },
-  cuisineModalFooter: {
-    flexDirection: "row", gap: 10, paddingTop: 14,
-    borderTopWidth: 1, marginTop: 8,
-  },
-  clearBtn: {
-    paddingHorizontal: 20, paddingVertical: 15, borderRadius: 14, borderWidth: 1,
-    alignItems: "center", justifyContent: "center",
-  },
-  clearBtnText: { fontSize: 15 },
-  applyBtn: { paddingVertical: 15, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  applyBtnText: { fontSize: 15 },
-
-  // ── Comment modal ──
-  commentModal: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
+  shareToast: { position: "absolute", bottom: 100, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 100, borderWidth: 1 },
+  shareToastText: { fontSize: 14 },
+  commentModal: { flex: 1, padding: 20 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
-  commentModalHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  commentModalTitle: { fontSize: 20 },
+  commentModalTitle: { fontSize: 20, marginBottom: 16 },
   commentRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
-  commentAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  commentAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   commentAvatarText: { color: "#fff", fontSize: 13 },
   commentBubble: { flex: 1, padding: 12, borderRadius: 14, borderWidth: 1, gap: 4 },
   commentUser: { fontSize: 13 },
-  commentText: { fontSize: 14, lineHeight: 20 },
+  commentText: { fontSize: 14, lineHeight: 19 },
   commentTime: { fontSize: 11 },
   noComments: { alignItems: "center", paddingVertical: 40, gap: 10 },
   noCommentsText: { fontSize: 15 },
-  commentInputRow: {
-    flexDirection: "row", alignItems: "flex-end", gap: 10,
-    padding: 12, borderRadius: 16, borderWidth: 1, marginTop: 8,
-  },
+  commentInput: { flexDirection: "row", alignItems: "flex-end", gap: 10, padding: 12, borderRadius: 16, borderWidth: 1, marginTop: 8 },
   commentInputText: { flex: 1, fontSize: 15, maxHeight: 80 },
-  sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  commentSendBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 });
