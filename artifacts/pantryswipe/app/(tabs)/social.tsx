@@ -18,16 +18,10 @@ import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { MOCK_SOCIAL_POSTS, SocialPost } from "@/data/mockData";
+import { getSocialImageSource } from "@/constants/recipeImages";
 
 const DISCOVERY_TABS = ["For You", "Following", "Trending", "Near Me"];
 const CUISINE_FILTERS = ["All", "Italian", "Japanese", "Korean", "Indian", "Mexican", "Thai", "Vegan"];
-
-const RECIPE_IMAGES: Record<string, ReturnType<typeof require>> = {
-  "recipe-pasta": require("@/assets/images/recipe-pasta.png"),
-  "recipe-salmon": require("@/assets/images/recipe-salmon.png"),
-  "recipe-bowl": require("@/assets/images/recipe-bowl.png"),
-  "recipe-bibimbap": require("@/assets/images/recipe-bibimbap.png"),
-};
 
 type Comment = { id: string; user: string; text: string; avatar: string; timeAgo: string };
 
@@ -97,17 +91,11 @@ export default function SocialScreen() {
 
   const formatCount = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toString();
 
-  const renderPost = ({ item }: { item: SocialPost }) => {
-    let imageSource: any = null;
-    if (item.image) {
-      imageSource = item.image.startsWith("http") ? { uri: item.image } : (RECIPE_IMAGES[item.image] ?? null);
-    }
-    if (!imageSource && item.recipeId) {
-      const linked = liveRecipes.find((r) => r.id === item.recipeId || r.id === `api_${item.recipeId}`);
-      if (linked?.image) {
-        imageSource = linked.image.startsWith("http") ? { uri: linked.image } : (RECIPE_IMAGES[linked.image] ?? null);
-      }
-    }
+  const renderPost = ({ item, index }: { item: SocialPost; index: number }) => {
+    const linkedRecipe = item.recipeId
+      ? liveRecipes.find((r) => r.id === item.recipeId || r.id === `api_${item.recipeId}`)
+      : undefined;
+    const imageSource = getSocialImageSource(item.image, index, linkedRecipe?.id);
     const postComments = comments[item.id] || [];
 
     return (

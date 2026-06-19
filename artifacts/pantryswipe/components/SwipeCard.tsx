@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Recipe } from "@/data/mockData";
 import { useApp } from "@/context/AppContext";
+import { getRecipeImageSource } from "@/constants/recipeImages";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.26;
@@ -26,13 +27,6 @@ const C = {
   blue:      "#5B8EF5",
   darkWarm:  "#1C1410",   // warm dark base for card info section
   darkWarm2: "#241A12",   // slightly lighter warm dark
-};
-
-const RECIPE_IMAGES: Record<string, ReturnType<typeof require>> = {
-  "recipe-pasta":    require("@/assets/images/recipe-pasta.png"),
-  "recipe-salmon":   require("@/assets/images/recipe-salmon.png"),
-  "recipe-bowl":     require("@/assets/images/recipe-bowl.png"),
-  "recipe-bibimbap": require("@/assets/images/recipe-bibimbap.png"),
 };
 
 const CUISINE_FLAGS: Record<string, string> = {
@@ -167,11 +161,7 @@ export default function SwipeCard({
 
   const cuisineFlag  = CUISINE_FLAGS[recipe.cuisine]  ?? "🌍";
   const cuisineEmoji = CUISINE_EMOJIS[recipe.cuisine] ?? "🍽";
-  const imageSource  = recipe.image
-    ? recipe.image.startsWith("http")
-      ? { uri: recipe.image }
-      : (RECIPE_IMAGES[recipe.image] ?? null)
-    : null;
+  const imageSource = getRecipeImageSource(recipe.image, recipe.id);
 
   // Pantry match pill color
   const matchColor  = pantryMatchScore >= 70 ? C.green : pantryMatchScore >= 40 ? C.saffron : "#888";

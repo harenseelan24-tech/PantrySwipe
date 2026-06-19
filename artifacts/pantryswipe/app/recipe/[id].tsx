@@ -17,17 +17,11 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
+import { getRecipeImageSource } from "@/constants/recipeImages";
 
 const API_BASE = Platform.OS !== "web"
   ? `https://${process.env.EXPO_PUBLIC_API_DOMAIN ?? "zip-repl-cactusussy24.replit.app"}/api`
   : "/api";
-
-const RECIPE_IMAGES: Record<string, ReturnType<typeof require>> = {
-  "recipe-pasta": require("@/assets/images/recipe-pasta.png"),
-  "recipe-salmon": require("@/assets/images/recipe-salmon.png"),
-  "recipe-bowl": require("@/assets/images/recipe-bowl.png"),
-  "recipe-bibimbap": require("@/assets/images/recipe-bibimbap.png"),
-};
 
 const AI_VARIATIONS = [
   { label: "High Protein",      icon: "trending-up" as const,  color: "#5B8EF5" },
@@ -295,11 +289,7 @@ export default function RecipeDetailScreen() {
   const displayFat      = Math.round(recipe.nutrition.fat     * (macroAdj?.fat     ?? 1));
   const displayFiber    = Math.round(recipe.nutrition.fiber);
 
-  const imageSource = recipe.image
-    ? recipe.image.startsWith("http")
-      ? { uri: recipe.image }
-      : (RECIPE_IMAGES[recipe.image] ?? null)
-    : null;
+  const imageSource = getRecipeImageSource(recipe.image, recipe.id);
 
   const handleToggleSave = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

@@ -16,12 +16,7 @@ import { BADGES } from "@/data/mockData";
 import { useRouter } from "expo-router";
 import { useSubscription } from "@/lib/revenuecat";
 
-const RECIPE_IMAGES: Record<string, ReturnType<typeof require>> = {
-  "recipe-pasta": require("@/assets/images/recipe-pasta.png"),
-  "recipe-salmon": require("@/assets/images/recipe-salmon.png"),
-  "recipe-bowl": require("@/assets/images/recipe-bowl.png"),
-  "recipe-bibimbap": require("@/assets/images/recipe-bibimbap.png"),
-};
+import { getRecipeImageSource } from "@/constants/recipeImages";
 
 const CUISINE_EMOJIS: Record<string, string> = {
   Italian: "🍝", Japanese: "🍜", Korean: "🥘", Mexican: "🌮",
@@ -312,9 +307,7 @@ export default function ProfileScreen() {
                   {Array.from({ length: Math.ceil(recipesList.length / 2) }, (_, ri) => (
                     <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
                       {recipesList.slice(ri * 2, ri * 2 + 2).map((recipe) => {
-                        const imgSrc = recipe.image
-                          ? recipe.image.startsWith("http") ? { uri: recipe.image } : (RECIPE_IMAGES[recipe.image] ?? null)
-                          : null;
+                        const imgSrc = getRecipeImageSource(recipe.image, recipe.id);
                         return (
                           <TouchableOpacity key={recipe.id} style={[styles.recipeGridItem, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/recipe/${recipe.id}`)}>
                             <View style={[styles.recipeGridImage, { backgroundColor: colors.primary + "20", overflow: "hidden" }]}>
@@ -351,9 +344,7 @@ export default function ProfileScreen() {
                   {Array.from({ length: Math.ceil(savedRecipesList.length / 2) }, (_, ri) => (
                     <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
                       {savedRecipesList.slice(ri * 2, ri * 2 + 2).map((recipe) => {
-                        const imgSrc = recipe.image
-                          ? recipe.image.startsWith("http") ? { uri: recipe.image } : (RECIPE_IMAGES[recipe.image] ?? null)
-                          : null;
+                        const imgSrc = getRecipeImageSource(recipe.image, recipe.id);
                         return (
                           <TouchableOpacity key={recipe.id} style={[styles.recipeGridItem, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => router.push(`/recipe/${recipe.id}`)}>
                             <View style={[styles.recipeGridImage, { backgroundColor: colors.saveBlue + "20", overflow: "hidden" }]}>
