@@ -193,7 +193,18 @@ export default function SocialScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPadding + 6, borderBottomColor: colors.border }]}>
-        {/* Left — heart notifications */}
+        {/* Left — new post */}
+        <TouchableOpacity
+          style={[styles.iconBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+          onPress={() => { setNewCaption(""); setShowCreatePost(true); }}
+        >
+          <Feather name="plus" size={20} color={colors.primaryForeground} />
+        </TouchableOpacity>
+
+        {/* Center — title */}
+        <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Social</Text>
+
+        {/* Right — heart notifications */}
         <TouchableOpacity
           style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPress={() => setShowNotifications(true)}
@@ -204,17 +215,6 @@ export default function SocialScreen() {
               <Text style={[styles.notifBadgeText, { fontFamily: "Inter_700Bold" }]}>{notifCount}</Text>
             </View>
           )}
-        </TouchableOpacity>
-
-        {/* Center — title */}
-        <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Social</Text>
-
-        {/* Right — new post */}
-        <TouchableOpacity
-          style={[styles.iconBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
-          onPress={() => { setNewCaption(""); setShowCreatePost(true); }}
-        >
-          <Feather name="plus" size={20} color={colors.primaryForeground} />
         </TouchableOpacity>
       </View>
 
