@@ -202,6 +202,8 @@ interface AppContextType {
   isSetupComplete: boolean;
   liveRecipes: Recipe[];
   recipesLoading: boolean;
+  followingList: string[];
+  savedPostIds: string[];
   updateProfile: (profile: Partial<UserProfile>) => void;
   completeSetup: () => void;
   signOut: () => Promise<void>;
@@ -219,6 +221,11 @@ interface AppContextType {
   getPersonalizedRecipes: (pool?: Recipe[]) => Recipe[];
   learningProfile: LearningProfile;
   trackSwipe: (recipe: Recipe, direction: "right" | "left" | "up") => void;
+  followUser: (handle: string) => void;
+  unfollowUser: (handle: string) => void;
+  isFollowing: (handle: string) => boolean;
+  toggleSavePost: (postId: string) => void;
+  isPostSaved: (postId: string) => boolean;
 }
 
 // ─── Learning / adaptive preferences ─────────────────────────────────────────
@@ -279,12 +286,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [liveRecipes, setLiveRecipes] = useState<Recipe[]>(MOCK_RECIPES);
   const [recipesLoading, setRecipesLoading] = useState(false);
+  const [followingList, setFollowingList] = useState<string[]>([]);
+  const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      const [profileData, pantryData, savedData, cookedData, statsData, setupData, historyData, learningData] =
+      const [profileData, pantryData, savedData, cookedData, statsData, setupData, historyData, learningData, followingData, savedPostsData] =
         await Promise.all([
           AsyncStorage.getItem(STORAGE_KEYS.PROFILE),
           AsyncStorage.getItem(STORAGE_KEYS.PANTRY),
@@ -294,6 +303,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEYS.SETUP_COMPLETE),
           AsyncStorage.getItem(STORAGE_KEYS.COOKING_HISTORY),
           AsyncStorage.getItem(STORAGE_KEYS.LEARNING),
+          AsyncStorage.getItem(STORAGE_KEYS.SOCIAL_FOLLOWING),
+          AsyncStorage.getItem(STORAGE_KEYS.SOCIAL_SAVED_POSTS),
         ]);
 
       const loadedProfile: UserProfile | undefined = profileData
@@ -307,6 +318,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (setupData) setIsSetupComplete(JSON.parse(setupData));
       if (historyData) setCookingHistory(JSON.parse(historyData));
       if (learningData) setLearningProfile(JSON.parse(learningData));
+      if (followingData) setFollowingList(JSON.parse(followingData));
+      if (savedPostsData) setSavedPostIds(JSON.parse(savedPostsData));
 
       fetchLiveRecipes(loadedProfile);
     } catch {
@@ -378,6 +391,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         STORAGE_KEYS.STATS,
         STORAGE_KEYS.COOKING_HISTORY,
         STORAGE_KEYS.LEARNING,
+        STORAGE_KEYS.SOCIAL_FOLLOWING,
+        STORAGE_KEYS.SOCIAL_SAVED_POSTS,
       ]);
     } catch { /* ignore storage errors */ }
     setUserProfile(defaultProfile);
@@ -388,7 +403,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStats(defaultStats);
     setIsSetupComplete(false);
     setLearningProfile(defaultLearning);
+    setFollowingList([]);
+    setSavedPostIds([]);
   };
+
+  const followUser = (handle: string) => {
+    if (followingList.includes(handle)) return;
+    const updated = [...followingList, handle];
+    setFollowingList(updated);
+    saveData(STORAGE_KEYS.SOCIAL_FOLLOWING, updated);
+  };
+
+  const unfollowUser = (handle: string) => {
+    const updated = followingList.filter((h) => h !== handle);
+    setFollowingList(updated);
+    saveData(STORAGE_KEYS.SOCIAL_FOLLOWING, updated);
+  };
+
+  const isFollowing = (handle: string): boolean => followingList.includes(handle);
+
+  const toggleSavePost = (postId: string) => {
+    const updated = savedPostIds.includes(postId)
+      ? savedPostIds.filter((id) => id !== postId)
+      : [...savedPostIds, postId];
+    setSavedPostIds(updated);
+    saveData(STORAGE_KEYS.SOCIAL_SAVED_POSTS, updated);
+  };
+
+  const isPostSaved = (postId: string): boolean => savedPostIds.includes(postId);
 
   const addToPantry = (item: PantryItem) => {
     const updated = [...pantryItems, item];
@@ -675,11 +717,13 @@ function recipeContainsProtein(recipe: Recipe, protein: string): boolean {
       value={{
         userProfile, pantryItems, savedRecipes, cookedRecipes, cookingHistory,
         stats, isSetupComplete, liveRecipes, recipesLoading,
+        followingList, savedPostIds,
         updateProfile, completeSetup, signOut,
         addToPantry, removeFromPantry, updatePantryItem,
         saveRecipe, unsaveRecipe, markCooked, cookDish,
         getMatchingRecipes, getPantryMatchScore, getIngredientMatches, refreshRecipes,
         getPersonalizedRecipes, learningProfile, trackSwipe,
+        followUser, unfollowUser, isFollowing, toggleSavePost, isPostSaved,
       }}
     >
       {children}

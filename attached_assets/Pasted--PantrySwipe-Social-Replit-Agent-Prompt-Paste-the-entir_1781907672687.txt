@@ -1,0 +1,206 @@
+# PantrySwipe Social — Replit Agent Prompt
+
+Paste the entire text below into the Replit agent chat.
+
+---
+
+## Context
+
+This is the PantrySwipe Expo mobile app (React Native, Expo Router, TypeScript, AsyncStorage-based state). The social feed lives at `artifacts/pantryswipe/app/(tabs)/social.tsx` and global state is in `artifacts/pantryswipe/context/AppContext.tsx`. The new-post modal likely lives at `artifacts/pantryswipe/app/new-post.tsx` or similar. Brand primary colour is Saffron `#F5A623`, background dark `#141210`. Do NOT change the existing dark design aesthetic.
+
+---
+
+## TASK LIST — implement all of the following:
+
+---
+
+### 1. CUISINE FILTER — Multi-Select Support
+
+In `social.tsx`, the cuisine filter row (All, Italian, Japanese, Korean, Indian, Mexican, etc.) currently filters to a single selected cuisine. Change it so:
+
+- Tapping **All** clears all other selections and shows everything (default state).
+- Tapping any cuisine **toggles** it on/off — the user can select multiple cuisines simultaneously (e.g. Italian + Korean at the same time).
+- When one or more cuisines are active, highlight each selected pill with a filled Saffron (`#F5A623`) background and dark text, just like the current single-selection style.
+- The feed then shows posts that match **any** of the selected cuisines (OR logic).
+- Selecting All again resets to show all posts.
+- Store the selected cuisines array in local state (`useState`), not in AppContext (it is ephemeral UI state).
+
+---
+
+### 2. FOLLOW BUTTON — Fully Interactive
+
+On every post card in the feed:
+
+- When user taps **Follow**, immediately:
+  - Hide the Follow button (remove it from the card entirely, not just grey it out).
+  - Increment a `followingCount` in `AppContext` (add this field if it does not exist, default `0`).
+  - Store the followed user's handle in a `followingList: string[]` array in `AppContext` so that the Following tab can use it.
+  - Show a brief animated confirmation — a small toast or the button briefly flashes "Following ✓" in green before disappearing.
+- On the **Profile** tab, display the following count next to the existing stats (posts, likes, etc.) labelled "Following".
+- Posts from followed users should appear in the **Following** tab (see task 4).
+- Do not show a Follow button on the current user's own posts.
+
+---
+
+### 3. POST INTERACTIONS — Like, Comment, Save, Share
+
+Make all four action icons on each post card fully functional:
+
+**Like (heart):**
+- Tapping toggles liked state. Liked = filled red heart. Unliked = outline.
+- Like count increments/decrements accordingly. Animate with a small scale bounce.
+- Persist per-post like state in AppContext or local feed state.
+
+**Comment (speech bubble):**
+- Tapping opens a bottom sheet / modal showing a simple comment thread for that post.
+- The modal has a text input at the bottom with a send button.
+- Submitted comments appear in the list above with the current user's avatar initial and username.
+- Close button at top right.
+
+**Share (network icon):**
+- Tapping shows React Native's share sheet via `Share.share({ message: "Check out this dish on PantrySwipe!" })`.
+
+**Save/Bookmark:**
+- Tapping toggles saved state. Saved = filled bookmark. Unsaved = outline.
+- Saved posts are added to a `savedPosts` array in AppContext.
+- On the **Profile** tab, already has a Saved grid — wire it to this `savedPosts` array.
+
+---
+
+### 4. FOLLOWING TAB — Functional Feed
+
+The **Following** tab currently shows nothing meaningful. Fix it:
+
+- Filter the global post list to only show posts from users whose handles are in the `followingList` array (AppContext).
+- If the user is not following anyone yet, show an empty state: a centered icon (e.g. Feather `user-plus`), heading "No one yet", subtext "Follow chefs you love and their posts will appear here", and a Saffron-coloured CTA button labelled "Discover Chefs" that switches back to the For You tab.
+- Apply the same cuisine filter row that the For You tab has.
+
+---
+
+### 5. TRENDING TAB — Functional Feed
+
+The **Trending** tab currently shows nothing or is a copy of For You. Fix it:
+
+- Sort the full post list by like count descending, then take the top posts (e.g. top 10 or all, sorted).
+- Show a small "🔥 Trending" badge overlaid on each post image (top-left corner, small pill with fire emoji and the word Trending, semi-transparent dark background).
+- Show a "Trending in [Cuisine]" section header — group posts by their cuisine tag and show the top post per cuisine as a horizontal scroll row above the main list, labelled "Trending Cuisines".
+- Apply cuisine multi-select filter on top of the trending sort.
+
+---
+
+### 6. NEAR ME TAB — Functional Feed
+
+The **Near Me** tab currently shows nothing. Fix it:
+
+- Use `expo-location` (already available in Expo SDK 54) to request location permission when the user first taps the Near Me tab.
+  - If permission denied, show an empty state with a map-pin icon, text "Location access needed", subtext "Enable location in your settings to see what people are cooking near you", and a button "Open Settings" that calls `Linking.openSettings()`.
+- If permission granted, mock a "near me" feed by assigning random distances (e.g. 0.3 km – 5 km) to each post and sorting by distance ascending. (Since there is no real backend, this is acceptable mock behaviour.)
+- Show a small distance badge on each post card (e.g. "📍 1.2 km away") below the username/time line.
+- Show a header bar: "Showing results near you" with a small grey location pill showing a placeholder suburb name (e.g. "Sengkang, SG").
+- Apply cuisine multi-select filter.
+
+---
+
+### 7. NEW POST PAGE — Full Overhaul (use Replit Agent skill)
+
+Replace the current bare-bones `new-post.tsx` with a fully featured compose screen. Keep the dark design (background `#141210`, text white, accents Saffron `#F5A623`). Use the Replit agent skill to build this page. Requirements:
+
+**Header:**
+- Left: "Cancel" button (dismisses modal).
+- Centre: "New Post" title (bold, white).
+- Right: "Share" button — Saffron text, disabled and greyed until the text field has at least 1 character.
+
+**User avatar row:**
+- Current user's orange avatar circle with initial (e.g. "Y") on the left.
+- Multiline text input to the right: placeholder "Share what you cooked…", dark background, white text, no visible border, auto-expanding up to ~6 lines. Character counter bottom-right showing `0/280`, turns amber at 240, red at 270.
+
+**Photo attachment:**
+- Tapping the 📷 Photo button opens the image picker (`expo-image-picker`).
+- Selected image(s) appear as a scrollable horizontal row of thumbnails below the text input, each with a small ✕ remove button in the top-right corner.
+- Up to 4 photos allowed; the button is disabled and shows a max-reached state when 4 are attached.
+
+**Cuisine tag selector (required for feed filtering to work):**
+- Tapping the 🏷️ Cuisine button opens a bottom sheet with the full cuisine list as a single-select grid of pill buttons (All should not be an option here — the user picks one specific cuisine or "None/Other").
+- The selected cuisine appears as a removable orange tag below the text area, exactly like the tags visible in the social feed posts (styled the same way — dark pill with Saffron emoji + label).
+- Cuisine tagging is **optional** — the user can post without selecting one (it will just show no cuisine tag on the post).
+
+**Recipe link (optional):**
+- Tapping the 📖 Recipe button opens a bottom sheet that lets the user link a recipe from their saved recipes (pull from AppContext saved recipes list).
+- The linked recipe shows as a small card preview below the compose area (recipe name, small thumbnail) with an ✕ to remove.
+- Copy must read: "Linking a recipe is optional — you can always edit your post and add it later."
+
+**Location toggle:**
+- A small "📍 Add location" row below the attachment toolbar. Tapping it toggles a location pill on the post preview (uses the same mock suburb from Near Me tab).
+
+**AI caption suggestion:**
+- A small sparkle button (✨) inside the text input area (bottom-right of the text box).
+- Tapping it calls the Anthropic API (`claude-sonnet-4-6`) with a prompt: "Suggest a short, enthusiastic social media caption (under 200 characters) for a food post about: [the recipe name if linked, otherwise 'a home-cooked meal']. Keep it fun and relatable. Return only the caption text, no quotes."
+- While loading, show a subtle shimmer/pulse on the input. On response, populate the text input with the suggested caption (the user can edit it freely after).
+- If no API key is available, show a toast "AI suggestion unavailable".
+
+**Post submission:**
+- Tapping Share creates a new post object and prepends it to the feed posts list in AppContext.
+- The new post should include: user handle (current user), timestamp "Just now", text content, attached photo(s) if any, cuisine tag if selected, linked recipe if any, location if toggled, likes: 0, comments: [].
+- After sharing, navigate back to the Social tab and scroll to the top of the For You feed so the user sees their new post immediately.
+- Show a brief success toast: "Post shared! 🎉"
+
+---
+
+### 8. APP CONTEXT UPDATES
+
+In `AppContext.tsx`, ensure the following fields exist (add them if missing, with sensible defaults):
+
+```typescript
+followingList: string[];          // handles the user follows
+followingCount: number;           // derived from followingList.length but keep explicit
+savedPosts: Post[];               // bookmarked posts
+feedPosts: Post[];                // all posts (for You + user-created)
+```
+
+Add helper methods / dispatch actions:
+- `followUser(handle: string)`
+- `unfollowUser(handle: string)`
+- `likePost(postId: string)`
+- `unlikePost(postId: string)`
+- `savePost(post: Post)`
+- `unsavePost(postId: string)`
+- `addComment(postId: string, comment: Comment)`
+- `addPost(post: Post)`
+
+Persist all of the above to AsyncStorage so state survives app restarts.
+
+---
+
+### 9. PROFILE TAB UPDATES
+
+On the Profile tab:
+
+- Add a **Following** count stat next to existing stats (Recipes, Cooked, Streak, etc.).
+- The **Saved** grid should render from `AppContext.savedPosts` — if empty, show the same empty-state pattern used elsewhere.
+- Add a **My Posts** grid tab alongside Saved, showing posts the current user has created (filter `feedPosts` by current user handle). Tapping a post opens it.
+- Add an **Edit Post** flow: long-pressing a post in My Posts opens an action sheet with "Edit Post" and "Delete Post". Edit reopens the new-post screen pre-populated with that post's data. Delete removes it from `feedPosts` in AppContext.
+
+---
+
+### 10. GENERAL POLISH (do all of these)
+
+- **Pull-to-refresh** on all four social feed tabs — show a spinner and re-sort/re-filter the data.
+- **Loading skeleton** — when the social tab first mounts, show 2–3 skeleton post cards (grey animated shimmer boxes) for ~800ms before rendering real content, for a polished feel.
+- **Haptic feedback** — add `expo-haptics` `impactAsync(ImpactFeedbackStyle.Light)` on like toggle, follow tap, and post share success.
+- **Post timestamp** — "Just now" for new posts, then "2h ago", "4h ago" etc. for mock posts. Use a `formatRelativeTime(date)` helper.
+- **Image post viewer** — tapping a post's image opens a full-screen image modal with pinch-to-zoom (use `react-native-reanimated` + `Pressable`), swipe down to dismiss.
+- **Double-tap to like** — double-tapping anywhere on the post image triggers the like action (with a large animated heart overlay that fades out, Instagram-style).
+- **Cuisine badge on For You posts** — posts that have a cuisine tag should always show it as a pill below the caption (Saffron border, dark background, small flag/food emoji + cuisine name), matching the design already visible in the screenshots. Posts without a tag show nothing.
+- **Empty search / no results state** — if the active cuisine filter(s) produce zero posts in any tab, show a centred empty state with a chef hat icon and text "No posts yet for this cuisine. Be the first to share!".
+- **Notification dot** — when a new post receives a like or comment (simulated: 5 seconds after any post is created, mock a like notification), show a red dot badge on the bottom-nav Social icon. Tapping Social clears it.
+
+---
+
+### Implementation Notes
+
+- Use `PanResponder` or `Pressable` with `onLongPress` for double-tap / long-press gestures — do **not** add `react-native-gesture-handler` (not in the current stack).
+- Do **not** change the dark `#141210` background, Saffron `#F5A623` accents, or the overall design system.
+- Do **not** add a backend — all state lives in AppContext + AsyncStorage.
+- All new screens/modals should use Expo Router's modal presentation (`presentation: 'modal'` in the route config or `router.push` with modal flag).
+- Keep all TypeScript strict — no `any` types. Define proper interfaces for `Post`, `Comment`, `Recipe` if not already defined.
+- After making all changes, run `pnpm run typecheck` and fix any type errors before finishing.

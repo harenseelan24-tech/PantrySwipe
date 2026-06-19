@@ -53,7 +53,7 @@ export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { userProfile, stats, savedRecipes, cookedRecipes, liveRecipes, signOut } = useApp();
+  const { userProfile, stats, savedRecipes, cookedRecipes, liveRecipes, signOut, followingList } = useApp();
   const { isSubscribed } = useSubscription();
   const scrollRef = useRef<ScrollView>(null);
   const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Recipes");
@@ -224,7 +224,7 @@ export default function ProfileScreen() {
               </View>
               <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
               <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>103</Text>
+                <Text style={[styles.statValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{followingList.length}</Text>
                 <Text style={[styles.statLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Following</Text>
               </View>
             </View>
