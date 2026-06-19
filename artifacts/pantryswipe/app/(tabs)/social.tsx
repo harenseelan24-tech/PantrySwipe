@@ -175,14 +175,24 @@ export default function SocialScreen() {
             <Text style={[styles.captionUsername, { fontFamily: "Inter_700Bold" }]}>@{item.username} </Text>
             {item.caption}
           </Text>
-          {item.recipeName && (
-            <TouchableOpacity
-              style={[styles.recipeChip, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "35" }]}
-              onPress={() => item.recipeId && router.push(`/recipe/${item.recipeId}`)}
-            >
-              <Feather name="book-open" size={12} color={colors.primary} />
-              <Text style={[styles.recipeChipText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>{item.recipeName}</Text>
-            </TouchableOpacity>
+          {(item.recipeName || item.cuisine) && (
+            <View style={styles.chipRow}>
+              {item.recipeName && (
+                <TouchableOpacity
+                  style={[styles.recipeChip, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "35" }]}
+                  onPress={() => item.recipeId && router.push(`/recipe/${item.recipeId}`)}
+                >
+                  <Feather name="book-open" size={12} color={colors.primary} />
+                  <Text style={[styles.recipeChipText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>{item.recipeName}</Text>
+                </TouchableOpacity>
+              )}
+              {item.cuisine && (
+                <View style={[styles.cuisineChip, { backgroundColor: colors.accent + "18", borderColor: colors.accent + "40" }]}>
+                  <Text style={styles.cuisineChipEmoji}>{CUISINE_EMOJIS[item.cuisine] ?? "🍽️"}</Text>
+                  <Text style={[styles.cuisineChipText, { color: colors.accent, fontFamily: "Inter_600SemiBold" }]}>{item.cuisine}</Text>
+                </View>
+              )}
+            </View>
           )}
         </View>
       </View>
@@ -473,7 +483,11 @@ const styles = StyleSheet.create({
   captionContainer: { paddingHorizontal: 16, paddingBottom: 14, gap: 8 },
   caption: { fontSize: 14, lineHeight: 20 },
   captionUsername: { fontSize: 14 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   recipeChip: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100, borderWidth: 1 },
+  cuisineChip: { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
+  cuisineChipEmoji: { fontSize: 13 },
+  cuisineChipText: { fontSize: 12 },
   recipeChipText: { fontSize: 12 },
   shareToast: { position: "absolute", bottom: 100, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 100, borderWidth: 1 },
   shareToastText: { fontSize: 14 },
