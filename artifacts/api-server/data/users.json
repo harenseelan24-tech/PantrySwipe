@@ -12,5 +12,12 @@
     "name": "haren",
     "passwordHash": "$2b$10$KL2GtIehG9SIMq54hl/FTe9jpJOtFLtENe4srY0PDeLylei4501wy",
     "createdAt": "2026-06-18T19:26:43.876Z"
+  },
+  {
+    "id": "2db3a995-c4f8-493f-a6f2-0e096cba1b83",
+    "email": "androidtest99@test.com",
+    "name": "Android Test",
+    "passwordHash": "$2b$10$dmUEKT2xw8qabzZOwdwfiOIgM.XnjYNeE8IN9Jk5ceJGCC8yqIb0u",
+    "createdAt": "2026-06-19T16:33:59.976Z"
   }
 ]
