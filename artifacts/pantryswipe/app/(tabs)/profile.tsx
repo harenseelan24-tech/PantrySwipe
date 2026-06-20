@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import {
+  Alert,
   Dimensions,
   Image,
   Platform,
@@ -130,48 +131,47 @@ export default function ProfileScreen() {
             <Text style={[styles.coverEmoji4]}>{coverEmojis[4] ?? "🌮"}</Text>
             {/* Vignette bottom fade */}
             <View style={[styles.coverVignette, { backgroundColor: colors.background }]} />
-            {/* Action buttons */}
-            <View style={styles.coverActions}>
-              <TouchableOpacity style={[styles.coverBtn, { backgroundColor: colors.card + "EE" }]}>
-                <Feather name="camera" size={14} color={colors.foreground} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.coverBtn, { backgroundColor: colors.card + "EE" }]} onPress={() => router.push("/settings")}>
-                <Feather name="settings" size={14} color={colors.foreground} />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.coverBtn, { backgroundColor: colors.card + "EE" }]} onPress={handleSignOut} disabled={signingOut}>
-                <Feather name="log-out" size={14} color={signingOut ? colors.textSecondary : "#E84040"} />
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Avatar row */}
           <View style={styles.avatarRow}>
-            {/* Streak ring around avatar */}
-            <View style={styles.avatarRingOuter}>
-              <View style={[styles.avatarTrack, { borderColor: streakActive ? colors.primary + "30" : colors.border }]} />
-              {streakActive && (
-                <View style={[styles.avatarArc, { borderColor: colors.primary, borderTopColor: "transparent" }]} />
-              )}
-              <View style={[styles.avatarInner, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.avatarLetter, { fontFamily: "Inter_700Bold" }]}>
-                  {userProfile.name[0]?.toUpperCase()}
-                </Text>
-              </View>
-              {streakActive && (
-                <View style={[styles.streakBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                  <Text style={styles.streakBadgeEmoji}>🔥</Text>
-                  <Text style={[styles.streakBadgeNum, { color: colors.primary, fontFamily: "SpaceGrotesk_700Bold" }]}>
-                    {stats.streak}
+            {/* Avatar — tappable to change profile photo */}
+            <TouchableOpacity activeOpacity={0.8} onPress={() => Alert.alert("Change Photo", "Choose a new profile photo", [{ text: "Camera", onPress: () => {} }, { text: "Photo Library", onPress: () => {} }, { text: "Cancel", style: "cancel" }])}>
+              <View style={styles.avatarRingOuter}>
+                <View style={[styles.avatarTrack, { borderColor: streakActive ? colors.primary + "30" : colors.border }]} />
+                {streakActive && (
+                  <View style={[styles.avatarArc, { borderColor: colors.primary, borderTopColor: "transparent" }]} />
+                )}
+                <View style={[styles.avatarInner, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.avatarLetter, { fontFamily: "Inter_700Bold" }]}>
+                    {userProfile.name[0]?.toUpperCase()}
                   </Text>
                 </View>
-              )}
-            </View>
-
-            {/* Edit profile button */}
-            <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border, backgroundColor: colors.card }]}>
-              <Feather name="edit-2" size={13} color={colors.foreground} />
-              <Text style={[styles.editBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Edit Profile</Text>
+                {streakActive && (
+                  <View style={[styles.streakBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                    <Text style={styles.streakBadgeEmoji}>🔥</Text>
+                    <Text style={[styles.streakBadgeNum, { color: colors.primary, fontFamily: "SpaceGrotesk_700Bold" }]}>
+                      {stats.streak}
+                    </Text>
+                  </View>
+                )}
+                {/* Camera badge overlay */}
+                <View style={[styles.cameraBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Feather name="camera" size={11} color={colors.foreground} />
+                </View>
+              </View>
             </TouchableOpacity>
+
+            {/* Edit Profile + Settings */}
+            <View style={styles.editRow}>
+              <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                <Feather name="edit-2" size={13} color={colors.foreground} />
+                <Text style={[styles.editBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Edit Profile</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.settingsBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => router.push("/settings")}>
+                <Feather name="settings" size={15} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Identity block */}
@@ -662,9 +662,6 @@ const styles = StyleSheet.create({
   coverVignette: {
     position: "absolute", bottom: 0, left: 0, right: 0, height: 48, opacity: 0.85,
   },
-  coverActions: { position: "absolute", top: 14, right: 14, flexDirection: "row", gap: 8 },
-  coverBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
-
   // ── Avatar with streak ring ─────────────────────────────────────────────────
   avatarRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 20, marginTop: -44 },
   avatarRingOuter: { width: 92, height: 92, position: "relative", alignItems: "center", justifyContent: "center" },
@@ -684,8 +681,16 @@ const styles = StyleSheet.create({
   streakBadgeEmoji: { fontSize: 11 },
   streakBadgeNum: { fontSize: 12 },
 
-  editBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 100, borderWidth: 1.5, marginBottom: 6 },
+  cameraBadge: {
+    position: "absolute", bottom: 2, right: 2,
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5,
+  },
+  editRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
+  editBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 100, borderWidth: 1.5 },
   editBtnText: { fontSize: 13 },
+  settingsBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
 
   // ── Identity block ──────────────────────────────────────────────────────────
   identityBlock: { paddingHorizontal: 20, paddingTop: 12, gap: 10 },
