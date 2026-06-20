@@ -369,7 +369,12 @@ export default function OnboardingScreen() {
           // API unavailable — continue without token
         }
         updateProfile({ name: name.trim(), email: email.trim(), skillLevel, dietType: dietTypes, allergies, proteinPreferences, goal, cuisinePreferences: selectedCuisines, householdSize, weeklyBudget });
+        // Write SETUP_COMPLETE directly (not fire-and-forget) so Android's SQLite
+        // flushes before we navigate — then call completeSetup() to sync context state.
+        await AsyncStorage.setItem(STORAGE_KEYS.SETUP_COMPLETE, "true");
         completeSetup();
+        // Give Android's JS bridge one extra tick before triggering navigation
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
         router.replace("/(tabs)");
       }, 700);
     }, 3500);

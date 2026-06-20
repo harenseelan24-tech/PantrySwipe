@@ -1,0 +1,314 @@
+# PantrySwipe — Android White Screen Fix Prompt
+
+> **Copy this entire prompt into Replit AI Agent (or Claude Code) and let it run to completion. Do NOT stop it early. It must pass all tests before finishing.**
+
+---
+
+## Context
+
+PantrySwipe is an Expo SDK 54 / expo-router v6 / React Native 0.81 app.  
+On **iOS** the app works perfectly. On **Android**, after a user completes registration/onboarding, they see a **blank white screen** instead of navigating to the main tab layout `/(tabs)`.
+
+The root guard lives in `artifacts/pantryswipe/app/index.tsx` and uses `AsyncStorage` to decide whether to send the user to `/welcome` (first-time) or `/(tabs)` (returning). The same `AppContext` writes registration data to `AsyncStorage`.
+
+---
+
+## Your Job
+
+Fix the Android white-screen-after-registration bug so the app works identically on both iOS and Android. You must:
+
+1. Diagnose every likely root cause (listed below)
+2. Apply all fixes
+3. Run the full test suite described at the bottom
+4. Only declare success after every test passes
+
+---
+
+## Known Root Causes to Investigate & Fix
+
+### 1. Navigation race condition in `app/index.tsx`
+Android's JS bridge initialises slightly slower than iOS. If `router.replace()` is called before the navigator is fully mounted, it silently fails and leaves a blank screen.
+
+**Fix:**
+```tsx
+// app/index.tsx
+import { useEffect, useState } from 'react';
+import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, ActivityIndicator } from 'react-native';
+
+export default function Index() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const onboarded = await AsyncStorage.getItem('onboardingComplete');
+        // Defer navigation by one frame so the navigator is mounted
+        requestAnimationFrame(() => {
+          if (onboarded === 'true') {
+            router.replace('/(tabs)');
+          } else {
+            router.replace('/welcome');
+          }
+          setReady(true);
+        });
+      } catch (e) {
+        router.replace('/welcome');
+      }
+    })();
+  }, []);
+
+  // Render a neutral loader — never a raw white View
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAF8' }}>
+      <ActivityIndicator size="large" color="#F5A623" />
+    </View>
+  );
+}
+```
+
+### 2. Onboarding/Registration does not await AsyncStorage write before navigating
+If the registration screen calls `router.replace('/(tabs)')` synchronously, the `onboardingComplete` key may not be persisted yet on Android (Android's AsyncStorage uses SQLite, which is slower than iOS's NSUserDefaults).
+
+**Fix in every screen that completes onboarding** (e.g. `app/onboarding.tsx`, `app/welcome.tsx`, any registration step):
+```tsx
+// BAD — may navigate before write is flushed on Android
+await AsyncStorage.setItem('onboardingComplete', 'true');
+router.replace('/(tabs)');
+
+// GOOD — await the write, then navigate
+await AsyncStorage.setItem('onboardingComplete', 'true');
+await new Promise(resolve => setTimeout(resolve, 50)); // give SQLite a tick
+router.replace('/(tabs)');
+```
+Or, even better, wrap the navigation in the `.then()` of the storage call:
+```tsx
+AsyncStorage.setItem('onboardingComplete', 'true').then(() => {
+  router.replace('/(tabs)');
+});
+```
+
+### 3. `useNativeDriver: true` on layout animations crashing the Android bridge
+React Native on Android does not support `useNativeDriver` for layout-related animated properties (`width`, `height`, `top`, `left`, `padding`, `margin`). A crash or silent failure here can blank the screen.
+
+**Fix:** Search the entire `artifacts/pantryswipe/` directory for `useNativeDriver` and audit every usage:
+```bash
+grep -r "useNativeDriver" artifacts/pantryswipe/
+```
+- `opacity`, `transform` → `useNativeDriver: true` ✅ safe
+- `width`, `height`, `backgroundColor`, `borderRadius`, `padding`, `margin`, `top`, `left` → must use `useNativeDriver: false`
+- Any `Animated.Value` driving a layout prop must set `useNativeDriver: false`
+
+### 4. Missing or incorrectly resolved `expo-router` layout file
+The `app/_layout.tsx` must wrap the entire app with `<AppProvider>` (or whatever your context provider is named) **before** the `<Stack>` or `<Slot>`. On Android, if the context is not available when the navigator mounts, screens render empty.
+
+**Fix — verify `app/_layout.tsx` looks like this:**
+```tsx
+import { Stack } from 'expo-router';
+import { AppProvider } from '../context/AppContext';
+import { StatusBar } from 'expo-status-bar';
+
+export default function RootLayout() {
+  return (
+    <AppProvider>
+      <StatusBar style="auto" />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="welcome" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="(tabs)" />
+        {/* add other stack screens here */}
+      </Stack>
+    </AppProvider>
+  );
+}
+```
+
+### 5. `app/(tabs)/_layout.tsx` using `Platform`-specific imports that fail on Android
+Check `app/(tabs)/_layout.tsx`. The replit.md mentions "NativeTabs on iOS 26+ (liquid glass), classic BlurView tabs otherwise." If BlurView or any iOS-only import is used without a Platform guard, it can crash silently on Android.
+
+**Fix:**
+```tsx
+import { Platform } from 'react-native';
+import { Tabs } from 'expo-router';
+
+// Only import BlurView if not Android
+const TabBarBackground = Platform.OS === 'android' ? undefined : require('../components/TabBarBackground').default;
+
+// In tab bar style:
+tabBarStyle: Platform.OS === 'android'
+  ? { backgroundColor: '#FAFAF8', elevation: 8 }
+  : { /* iOS blur style */ }
+```
+
+### 6. `expo-blur` on Android (if used for tab bar)
+`expo-blur` does not work on Android and will render nothing (causing a blank tab bar or crash). Replace it with a plain `View` with a background colour when on Android:
+
+```tsx
+import { BlurView } from 'expo-blur';
+import { Platform, View } from 'react-native';
+
+// In tab bar background:
+{Platform.OS === 'android' ? (
+  <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#FAFAF8' }} />
+) : (
+  <BlurView tint="light" intensity={80} style={StyleSheet.absoluteFill} />
+)}
+```
+
+### 7. AsyncStorage key mismatch
+Confirm the key used when writing (`'onboardingComplete'`) exactly matches the key read in `app/index.tsx`. A typo (e.g. `'onboarding_complete'` vs `'onboardingComplete'`) means Android always thinks it's a first-time user and loops back to welcome, then hits a navigation dead end.
+
+```bash
+grep -r "AsyncStorage" artifacts/pantryswipe/ | grep -E "setItem|getItem"
+```
+All keys must be identical strings.
+
+### 8. Android back-button / hardware back interceptor
+On Android, pressing back from `/(tabs)` after registration could pop the navigator stack back to `index.tsx` (which then renders a blank screen again). Add a back-handler guard in the tabs layout:
+
+```tsx
+// app/(tabs)/_layout.tsx
+import { useEffect } from 'react';
+import { BackHandler } from 'react-native';
+
+useEffect(() => {
+  const sub = BackHandler.addEventListener('hardwareBackPress', () => true); // block back from tabs root
+  return () => sub.remove();
+}, []);
+```
+
+---
+
+## Files to Check and Modify
+
+Run these shell commands to find all relevant files:
+
+```bash
+# Find all navigation calls
+grep -r "router\." artifacts/pantryswipe/app/ --include="*.tsx" --include="*.ts"
+
+# Find all AsyncStorage usages
+grep -rn "AsyncStorage" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts"
+
+# Find useNativeDriver issues
+grep -rn "useNativeDriver" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts"
+
+# Find BlurView usages
+grep -rn "BlurView\|expo-blur" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts"
+
+# Find Platform checks (to see what's already guarded)
+grep -rn "Platform\." artifacts/pantryswipe/ --include="*.tsx" --include="*.ts"
+
+# List all screens in app/
+find artifacts/pantryswipe/app -name "*.tsx" | sort
+```
+
+---
+
+## Tests You Must Run Before Finishing
+
+You must not stop until **all** of the following pass. Run them in order.
+
+### Test 1 — TypeScript compiles with zero errors
+```bash
+pnpm run typecheck
+```
+Expected: exits with code 0, no errors printed.
+
+### Test 2 — No forbidden useNativeDriver patterns
+```bash
+# This must return zero results:
+grep -rn "useNativeDriver.*true" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts" | \
+  xargs -I{} grep -l "width\|height\|padding\|margin\|top\|left\|backgroundColor\|borderRadius" 2>/dev/null
+echo "Exit code: $?"
+```
+Expected: zero lines output (no files with native-driver-true AND layout props together).
+
+### Test 3 — All AsyncStorage keys are consistent
+```bash
+# Extract all AsyncStorage.setItem key strings
+echo "=== setItem keys ==="
+grep -rn "AsyncStorage.setItem" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts"
+
+# Extract all AsyncStorage.getItem key strings  
+echo "=== getItem keys ==="
+grep -rn "AsyncStorage.getItem" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts"
+```
+Expected: every key used in `setItem` has a matching string in some `getItem` call (and vice versa). Manually verify no typos.
+
+### Test 4 — No unguarded BlurView (Android-safe)
+```bash
+# Check if BlurView is used — if so, verify Platform guard exists in same file
+grep -rn "BlurView" artifacts/pantryswipe/ --include="*.tsx" | while read line; do
+  file=$(echo "$line" | cut -d: -f1)
+  if ! grep -q "Platform" "$file"; then
+    echo "FAIL: $file uses BlurView without Platform guard"
+  else
+    echo "OK: $file"
+  fi
+done
+```
+Expected: every line prints `OK`.
+
+### Test 5 — Root layout wraps AppProvider correctly
+```bash
+cat artifacts/pantryswipe/app/_layout.tsx
+```
+Expected output contains: `AppProvider` (or equivalent context provider) wrapping the `Stack`/`Slot`.
+
+### Test 6 — index.tsx uses requestAnimationFrame before router.replace
+```bash
+cat artifacts/pantryswipe/app/index.tsx
+```
+Expected output contains both `requestAnimationFrame` and `router.replace`.
+
+### Test 7 — Onboarding completion writes AsyncStorage before navigating
+```bash
+grep -A5 "onboardingComplete" artifacts/pantryswipe/app/onboarding.tsx 2>/dev/null || \
+grep -rn "onboardingComplete" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts" -A3
+```
+Expected: every write to `onboardingComplete` is followed by navigation (not before it), and ideally inside a `.then()` or after `await`.
+
+### Test 8 — Expo dev server starts without errors
+```bash
+timeout 30 pnpm --filter @workspace/pantryswipe run dev 2>&1 | head -50
+```
+Expected: "Metro bundler started" or similar success message. No import errors, no module-not-found errors.
+
+### Test 9 — No Android-incompatible shadow* style props without boxShadow fallback
+```bash
+grep -rn "shadowColor\|shadowOffset\|shadowOpacity\|shadowRadius" artifacts/pantryswipe/ --include="*.tsx" --include="*.ts" | \
+  while read line; do
+    file=$(echo "$line" | cut -d: -f1)
+    if ! grep -q "elevation\|Platform" "$file"; then
+      echo "WARN: $file uses shadow* without elevation/Platform — may look wrong on Android"
+    fi
+  done
+```
+Expected: zero WARN lines, or every file with shadow* also has `elevation` or a `Platform` check.
+
+### Test 10 — Manual navigation flow logic check
+Print the complete navigation flow for a new user and a returning user:
+```bash
+echo "=== index.tsx flow ===" && cat artifacts/pantryswipe/app/index.tsx
+echo ""
+echo "=== welcome.tsx navigation calls ===" && grep -n "router\." artifacts/pantryswipe/app/welcome.tsx 2>/dev/null
+echo ""
+echo "=== onboarding.tsx navigation calls ===" && grep -n "router\." artifacts/pantryswipe/app/onboarding.tsx 2>/dev/null
+echo ""
+echo "=== (tabs) _layout.tsx ===" && cat "artifacts/pantryswipe/app/(tabs)/_layout.tsx" 2>/dev/null
+```
+Expected: a clear path from `/` → `/welcome` → `/onboarding` → `/(tabs)` for new users, and `/` → `/(tabs)` for returning users. No dead ends.
+
+---
+
+## Definition of Done
+
+You are finished when:
+- All 10 tests above pass (or produce the expected output)
+- TypeScript compiles cleanly (`pnpm run typecheck` exits 0)
+- You have summarised every file you changed and why
+
+Do **not** stop, ask for confirmation, or declare success until every test has been run and its output verified.

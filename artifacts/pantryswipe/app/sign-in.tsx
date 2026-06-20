@@ -61,6 +61,8 @@ export default function SignInScreen() {
       }
       // Ensure setup complete is set so root guard routes to tabs
       await AsyncStorage.setItem(STORAGE_KEYS.SETUP_COMPLETE, "true");
+      // Give Android's SQLite one extra tick to flush before navigating
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
       router.replace("/(tabs)");
     } catch {
       setError("Unable to connect. Check your internet connection and try again.");

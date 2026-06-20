@@ -1,27 +1,38 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Redirect } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { router } from "expo-router";
+import React, { useEffect } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { STORAGE_KEYS } from "@/constants/storageKeys";
 
 export default function RootIndex() {
-  const [ready, setReady] = useState(false);
-  const [setupComplete, setSetupComplete] = useState(false);
-
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.SETUP_COMPLETE)
       .then((val) => {
+        let setupComplete = false;
         try {
-          setSetupComplete(!!JSON.parse(val ?? "false"));
+          setupComplete = !!JSON.parse(val ?? "false");
         } catch {
-          setSetupComplete(false);
+          setupComplete = false;
         }
-        setReady(true);
+        // Defer by one frame so the navigator is fully mounted on Android
+        requestAnimationFrame(() => {
+          if (setupComplete) {
+            router.replace("/(tabs)");
+          } else {
+            router.replace("/welcome");
+          }
+        });
       })
-      .catch(() => setReady(true));
+      .catch(() => {
+        requestAnimationFrame(() => {
+          router.replace("/welcome");
+        });
+      });
   }, []);
 
-  if (!ready) return <View style={{ flex: 1, backgroundColor: "#141210" }} />;
-  if (setupComplete) return <Redirect href="/(tabs)" />;
-  return <Redirect href="/welcome" />;
+  return (
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#141210" }}>
+      <ActivityIndicator size="large" color="#F5A623" />
+    </View>
+  );
 }

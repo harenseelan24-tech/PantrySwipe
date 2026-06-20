@@ -1,13 +1,19 @@
 import { Tabs } from "expo-router";
 import { Feather } from "@expo/vector-icons";
-import React from "react";
-import { Platform, StyleSheet, View } from "react-native";
+import React, { useEffect } from "react";
+import { BackHandler, Platform, StyleSheet, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 
 export default function TabLayout() {
   const colors = useColors();
   const isWeb = Platform.OS === "web";
+
+  // Block Android hardware back button from popping tabs back to the blank index screen
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => sub.remove();
+  }, []);
 
   return (
     <Tabs
