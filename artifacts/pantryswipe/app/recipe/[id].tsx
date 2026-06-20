@@ -591,111 +591,182 @@ export default function RecipeDetailScreen() {
       setShowCelebration(true);
     };
 
+    const stepProgress = (cookModeStep + 1) / displaySteps.length;
+    const variationColor = varCommitted && appliedVariation
+      ? (AI_VARIATIONS.find((v) => v.label === appliedVariation)?.color ?? colors.saffron)
+      : null;
+
     return (
       <View style={[styles.cookMode, { backgroundColor: "#141210" }]}>
-        {/* Header: ← (back/close) | Cook Mode | progress → (next) */}
-        <View style={[styles.cookModeHeader, { paddingTop: topPadding + 8 }]}>
-          <TouchableOpacity
-            onPress={() => {
-              if (cookModeStep === 0) setCookMode(false);
-              else setCookModeStep((s) => s - 1);
-            }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Feather name={cookModeStep === 0 ? "x" : "arrow-left"} size={24} color="#F0EDE8" />
-          </TouchableOpacity>
 
-          <Text style={styles.cookModeTitle}>Cook Mode</Text>
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Text style={styles.cookModeProgress}>{cookModeStep + 1}/{displaySteps.length}</Text>
-            {!isLast ? (
-              <TouchableOpacity
-                onPress={() => setCookModeStep((s) => s + 1)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Feather name="arrow-right" size={24} color="#F0EDE8" />
-              </TouchableOpacity>
-            ) : (
-              <View style={{ width: 24 }} />
-            )}
-          </View>
+        {/* ── Saffron progress rail ── */}
+        <View style={styles.cmProgressRail}>
+          <View style={[styles.cmProgressFill, { width: `${stepProgress * 100}%` as any }]} />
         </View>
 
-        {/* In-cook timer pill */}
+        {/* ── Header: close | recipe title + step dots ── */}
+        <View style={[styles.cmHeader, { paddingTop: topPadding + 10 }]}>
+          <TouchableOpacity
+            style={styles.cmCloseBtn}
+            onPress={() => setCookMode(false)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Feather name="x" size={18} color="#5A5550" />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, alignItems: "center", gap: 6 }}>
+            <Text style={styles.cmRecipeTitle} numberOfLines={1}>{recipe.title}</Text>
+            {/* Progress dots — tap to jump to any step */}
+            <View style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+              {displaySteps.map((_, i) => (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => { setCookModeStep(i); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <View style={[
+                    styles.cmStepDot,
+                    {
+                      width: i === cookModeStep ? 20 : 6,
+                      backgroundColor: i === cookModeStep
+                        ? colors.saffron
+                        : i < cookModeStep
+                          ? "#4CAF76"
+                          : "#2E2B26",
+                    },
+                  ]} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.cmCloseBtn} />
+        </View>
+
+        {/* ── Timer pill (floating, only when active) ── */}
         {timerSeconds !== null && (
-          <Animated.View style={[styles.cookModeTimerPill, { opacity: timerPillAnim, transform: [{ scale: timerPillAnim }] }]}>
-            <Feather name="clock" size={15} color={timerSeconds === 0 ? "#fff" : colors.saffron} />
-            <Text style={[styles.cookModeTimerPillLabel, { color: timerSeconds === 0 ? "#fff" : "#F0EDE8" }]} numberOfLines={1}>{timerLabel}</Text>
-            <Text style={[styles.cookModeTimerPillTime, { color: timerSeconds === 0 ? "#00BFA5" : colors.saffron }]}>
+          <Animated.View style={[styles.cmTimerPill, { opacity: timerPillAnim, transform: [{ scale: timerPillAnim }] }]}>
+            <Feather name="clock" size={14} color={timerSeconds === 0 ? "#00BFA5" : colors.saffron} />
+            <Text style={[styles.cmTimerPillLabel, { color: timerSeconds === 0 ? "#00BFA5" : "#F0EDE8" }]} numberOfLines={1}>{timerLabel}</Text>
+            <Text style={[styles.cmTimerPillTime, { color: timerSeconds === 0 ? "#00BFA5" : colors.saffron }]}>
               {timerSeconds === 0 ? "Done! 🎉" : formatTime(timerSeconds)}
             </Text>
-            <TouchableOpacity onPress={() => setTimerRunning((r) => !r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name={timerRunning ? "pause" : "play"} size={15} color="#9E9E9E" />
+            <TouchableOpacity onPress={() => setTimerRunning((r) => !r)} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+              <Feather name={timerRunning ? "pause" : "play"} size={14} color="#666" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={cancelTimer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="x" size={15} color="#666" />
+            <TouchableOpacity onPress={cancelTimer} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+              <Feather name="x" size={14} color="#555" />
             </TouchableOpacity>
           </Animated.View>
         )}
 
-        {/* Step content */}
-        <ScrollView style={styles.cookModeContent} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
-          <View style={[styles.cookModeStepNum, { backgroundColor: colors.saffron }]}>
-            <Text style={styles.cookModeStepNumText}>{currentStep.step}</Text>
-          </View>
-          <View style={{ gap: 14 }}>
-            {splitToPoints(currentStep.instruction).map((line, idx) => (
-              <View key={idx} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
-                <Text style={[styles.cookModeBulletDot, { color: colors.saffron }]}>•</Text>
-                <Text style={[styles.cookModeInstruction, { flex: 1 }]}>
-                  {line.startsWith("•") ? line.slice(1).trim() : line}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
+        {/* ── Step content area ── */}
+        <View style={{ flex: 1, overflow: "hidden" }}>
+          {/* Ghost step number — design signature: huge ambient digit */}
+          <Text style={styles.cmGhostNum} aria-hidden>{currentStep.step}</Text>
 
-        {/* Footer: Start Timer or Done Cooking */}
-        <View style={[styles.cookModeFooter, { paddingBottom: bottomPadding + 16 }]}>
-          {currentStep.timerMinutes ? (
+          <ScrollView
+            style={styles.cmContent}
+            contentContainerStyle={{ paddingBottom: 32 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Step badge row */}
+            <View style={styles.cmBadgeRow}>
+              <View style={[styles.cmStepBadge, { backgroundColor: variationColor ?? colors.saffron }]}>
+                <Text style={styles.cmStepBadgeText}>{currentStep.step}</Text>
+              </View>
+              <Text style={styles.cmStepOf}>of {displaySteps.length}</Text>
+              {variationColor && (
+                <View style={[styles.cmVariationTag, { backgroundColor: variationColor + "20" }]}>
+                  <Text style={[styles.cmVariationTagText, { color: variationColor }]}>
+                    {appliedVariation}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Instruction lines */}
+            <View style={{ gap: 18 }}>
+              {splitToPoints(currentStep.instruction).map((line, idx) => (
+                <View key={idx} style={styles.cmInstructionRow}>
+                  <View style={[styles.cmBulletBar, { backgroundColor: variationColor ?? colors.saffron }]} />
+                  <Text style={styles.cmInstructionText}>
+                    {line.startsWith("•") ? line.slice(1).trim() : line}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Inline timer button */}
+            {currentStep.timerMinutes && (
+              <TouchableOpacity
+                style={[styles.cmInlineTimer, {
+                  backgroundColor: isTimerActiveForStep ? "#1E1B18" : "#1A1713",
+                  borderColor: isTimerActiveForStep ? colors.saffron : "#2E2B26",
+                }]}
+                onPress={() => startTimer(currentStep.timerMinutes!, `Step ${currentStep.step}`)}
+                activeOpacity={0.8}
+              >
+                <Feather name="clock" size={17} color={colors.saffron} />
+                <Text style={styles.cmInlineTimerText}>
+                  {isTimerActiveForStep
+                    ? `Running — ${formatTime(timerSeconds ?? 0)} left`
+                    : `${currentStep.timerMinutes} min timer`}
+                </Text>
+                {isTimerActiveForStep && (
+                  <TouchableOpacity onPress={cancelTimer} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Feather name="x-circle" size={15} color="#555" />
+                  </TouchableOpacity>
+                )}
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </View>
+
+        {/* ── Navigation footer — large touch targets ── */}
+        <View style={[styles.cmNavFooter, { paddingBottom: bottomPadding + 10 }]}>
+          {/* Back button */}
+          <TouchableOpacity
+            style={[styles.cmNavBack, {
+              backgroundColor: cookModeStep === 0 ? "#161310" : "#1E1B18",
+              borderColor: "#252219",
+              opacity: cookModeStep === 0 ? 0.4 : 1,
+            }]}
+            onPress={() => {
+              if (cookModeStep > 0) {
+                setCookModeStep((s) => s - 1);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+            }}
+            disabled={cookModeStep === 0}
+            activeOpacity={0.7}
+          >
+            <Feather name="arrow-left" size={22} color="#F0EDE8" />
+          </TouchableOpacity>
+
+          {/* Primary CTA */}
+          {isLast ? (
             <TouchableOpacity
-              style={[styles.cookModeBtn, styles.cookModeNextBtn, {
-                backgroundColor: isTimerActiveForStep ? "#2A2720" : colors.saffron,
-                borderWidth: isTimerActiveForStep ? 1 : 0,
-                borderColor: colors.saffron,
-              }]}
-              onPress={() => startTimer(currentStep.timerMinutes!, `Step ${currentStep.step}`)}
-            >
-              <Feather name="clock" size={22} color={isTimerActiveForStep ? colors.saffron : "#fff"} />
-              <Text style={[styles.cookModeBtnText, { color: isTimerActiveForStep ? colors.saffron : "#fff" }]}>
-                {isTimerActiveForStep
-                  ? `Running: ${formatTime(timerSeconds ?? 0)}`
-                  : `Start ${currentStep.timerMinutes} min Timer`}
-              </Text>
-            </TouchableOpacity>
-          ) : isLast ? (
-            <TouchableOpacity
-              style={[styles.cookModeBtn, styles.cookModeNextBtn, { backgroundColor: "#4CAF76" }]}
+              style={[styles.cmNavMain, { backgroundColor: "#4CAF76" }]}
               onPress={handleFinishCooking}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.cookModeBtnText, { color: "#fff" }]}>Done Cooking! 🎉</Text>
+              <Feather name="check-circle" size={22} color="#fff" />
+              <Text style={styles.cmNavMainText}>Done Cooking!</Text>
             </TouchableOpacity>
           ) : (
-            <View style={[styles.cookModeBtn, styles.cookModeNextBtn, { backgroundColor: "transparent" }]}>
-              <Text style={[styles.cookModeBtnText, { color: "#555", fontSize: 14 }]}>
-                Use ← → above to navigate steps
-              </Text>
-            </View>
-          )}
-          {isLast && currentStep.timerMinutes ? (
             <TouchableOpacity
-              style={[styles.cookModeBtn, { backgroundColor: "#4CAF76" }]}
-              onPress={handleFinishCooking}
+              style={[styles.cmNavMain, { backgroundColor: variationColor ?? colors.saffron }]}
+              onPress={() => {
+                setCookModeStep((s) => s + 1);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+              activeOpacity={0.85}
             >
-              <Text style={[styles.cookModeBtnText, { color: "#fff" }]}>Finish 🎉</Text>
+              <Text style={styles.cmNavMainText}>Next Step</Text>
+              <Feather name="arrow-right" size={22} color="#fff" />
             </TouchableOpacity>
-          ) : null}
+          )}
         </View>
       </View>
     );
@@ -1569,29 +1640,70 @@ const styles = StyleSheet.create({
   stickyBarCookText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" },
 
   cookMode: { flex: 1 },
-  cookModeHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 12,
+
+  // ── Redesigned Cook Mode (cm* prefix) ──────────────────────────────────────
+  cmProgressRail: { height: 3, backgroundColor: "#1E1B18", width: "100%" },
+  cmProgressFill: { height: 3, backgroundColor: "#F5A623", borderRadius: 2 },
+
+  cmHeader: {
+    flexDirection: "row" as const, alignItems: "center" as const,
+    paddingHorizontal: 16, paddingBottom: 14, gap: 8,
   },
-  cookModeTitle: { color: "#F0EDE8", fontSize: 17, fontFamily: "Inter_600SemiBold" },
-  cookModeProgress: { color: "#9E9E9E", fontSize: 14, fontFamily: "Inter_500Medium" },
-  cookModeTimerPill: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    marginHorizontal: 20, marginBottom: 12,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 100,
-    backgroundColor: "#1E1B18",
+  cmCloseBtn: { width: 36, height: 36, alignItems: "center" as const, justifyContent: "center" as const },
+  cmRecipeTitle: { color: "#F0EDE8", fontSize: 13, fontFamily: "Inter_600SemiBold", letterSpacing: -0.1 },
+  cmStepDot: { height: 6, borderRadius: 3 },
+
+  cmTimerPill: {
+    flexDirection: "row" as const, alignItems: "center" as const, gap: 7,
+    marginHorizontal: 20, marginBottom: 10,
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 100,
+    backgroundColor: "#1A1713", borderWidth: 1, borderColor: "#2A2720",
   },
-  cookModeTimerPillLabel: { flex: 1, fontSize: 13 },
-  cookModeTimerPillTime: { fontSize: 15, fontFamily: "SpaceGrotesk_600SemiBold" },
-  cookModeContent: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
-  cookModeStepNum: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 24 },
-  cookModeStepNumText: { color: "#fff", fontSize: 20, fontFamily: "SpaceGrotesk_600SemiBold" },
-  cookModeBulletDot: { fontSize: 22, lineHeight: 30, flexShrink: 0 },
-  cookModeInstruction: { color: "#F0EDE8", fontSize: 19, lineHeight: 29, fontFamily: "Inter_600SemiBold", letterSpacing: -0.1 },
-  cookModeFooter: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingTop: 12 },
-  cookModeBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, paddingVertical: 16, borderRadius: 14 },
-  cookModeNextBtn: { flex: 1, justifyContent: "center" },
-  cookModeBtnText: { color: "#F0EDE8", fontSize: 17, fontFamily: "Inter_700Bold" },
+  cmTimerPillLabel: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium" },
+  cmTimerPillTime: { fontSize: 14, fontFamily: "SpaceGrotesk_600SemiBold" },
+
+  cmContent: { flex: 1, paddingHorizontal: 24, paddingTop: 4 },
+
+  // Ghost step number — design signature
+  cmGhostNum: {
+    position: "absolute" as const, right: -8, top: -16,
+    fontSize: 200, fontFamily: "SpaceGrotesk_700Bold",
+    color: "#F0EDE8", opacity: 0.03, lineHeight: 220,
+    pointerEvents: "none" as any,
+  },
+
+  cmBadgeRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, marginBottom: 26 },
+  cmStepBadge: { width: 42, height: 42, borderRadius: 21, alignItems: "center" as const, justifyContent: "center" as const },
+  cmStepBadgeText: { color: "#fff", fontSize: 19, fontFamily: "SpaceGrotesk_700Bold" },
+  cmStepOf: { color: "#4A4540", fontSize: 14, fontFamily: "Inter_400Regular" },
+  cmVariationTag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100 },
+  cmVariationTagText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+
+  cmInstructionRow: { flexDirection: "row" as const, gap: 14, alignItems: "flex-start" as const },
+  cmBulletBar: { width: 3, borderRadius: 2, minHeight: 22, marginTop: 4, alignSelf: "stretch" as const },
+  cmInstructionText: { color: "#F0EDE8", fontSize: 20, lineHeight: 30, fontFamily: "Inter_600SemiBold", letterSpacing: -0.2, flex: 1 },
+
+  cmInlineTimer: {
+    flexDirection: "row" as const, alignItems: "center" as const, gap: 10,
+    marginTop: 28, padding: 16, borderRadius: 16, borderWidth: 1,
+  },
+  cmInlineTimerText: { flex: 1, color: "#F5A623", fontSize: 15, fontFamily: "Inter_600SemiBold" },
+
+  cmNavFooter: {
+    flexDirection: "row" as const, gap: 12,
+    paddingHorizontal: 20, paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: "#1A1713",
+  },
+  cmNavBack: {
+    width: 56, height: 56, borderRadius: 16,
+    alignItems: "center" as const, justifyContent: "center" as const, borderWidth: 1,
+  },
+  cmNavMain: {
+    flex: 1, height: 56, borderRadius: 16,
+    flexDirection: "row" as const, alignItems: "center" as const,
+    justifyContent: "center" as const, gap: 10,
+  },
+  cmNavMainText: { color: "#fff", fontSize: 17, fontFamily: "Inter_700Bold" },
 
   celebrationOverlay: {
     ...StyleSheet.absoluteFillObject,
