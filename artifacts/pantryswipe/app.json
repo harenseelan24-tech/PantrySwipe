@@ -17,7 +17,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.pantryswipe.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "PantrySwipe uses your camera to scan barcodes and automatically add food items to your pantry."
+        "NSCameraUsageDescription": "PantrySwipe uses your camera to scan barcodes and automatically add food items to your pantry.",
+        "NSPhotoLibraryUsageDescription": "PantrySwipe needs access to your photo library to let you share food photos in your posts.",
+        "NSLocationWhenInUseUsageDescription": "PantrySwipe uses your location to show nearby food posts and restaurants."
       }
     },
     "android": {
@@ -25,7 +27,13 @@
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#141210"
       },
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -43,6 +51,18 @@
         "expo-camera",
         {
           "cameraPermission": "PantrySwipe uses your camera to scan barcodes and automatically add food items to your pantry."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "PantrySwipe needs access to your photo library to let you share food photos in your posts."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "PantrySwipe uses your location to show nearby food posts and restaurants."
         }
       ]
     ],

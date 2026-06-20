@@ -3,6 +3,7 @@ import {
   Animated,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -126,6 +127,9 @@ export default function SocialScreen() {
 
   // Near Me
   const [locationPermission, setLocationPermission] = useState<"unknown" | "granted" | "denied">("unknown");
+
+  // Compose input ref (for programmatic focus after modal open on Android)
+  const composeInputRef = useRef<TextInput>(null);
 
   // Double-tap like animation
   const heartAnim = useRef(new Animated.Value(0)).current;
@@ -683,8 +687,18 @@ export default function SocialScreen() {
       ) : null}
 
       {/* ── Create Post Modal ─────────────────────────────────────────────────── */}
-      <Modal visible={showCreatePost} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowCreatePost(false)}>
-        <View style={[composeStyles.container, { backgroundColor: colors.background }]}>
+      <Modal
+        visible={showCreatePost}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setShowCreatePost(false)}
+        onShow={() => { setTimeout(() => composeInputRef.current?.focus(), 150); }}
+      >
+        <KeyboardAvoidingView
+          style={[composeStyles.container, { backgroundColor: colors.background }]}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={0}
+        >
           {/* Header */}
           <View style={[composeStyles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowCreatePost(false)} style={composeStyles.headerSide}>
@@ -711,10 +725,10 @@ export default function SocialScreen() {
                   style={[composeStyles.input, { color: colors.foreground, fontFamily: "Inter_400Regular" }]}
                   placeholder="Share what you cooked…"
                   placeholderTextColor={colors.textMuted}
+                  ref={composeInputRef}
                   value={newCaption}
                   onChangeText={setNewCaption}
                   multiline
-                  autoFocus
                   maxLength={280}
                   textAlignVertical="top"
                 />
@@ -835,94 +849,94 @@ export default function SocialScreen() {
               {composerLocation && <Feather name="check-circle" size={15} color="#4CAF76" style={{ marginLeft: "auto" }} />}
             </TouchableOpacity>
           </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Cuisine picker (sibling of compose modal, not nested) ─────────────── */}
+      <Modal visible={showCuisineSheet} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowCuisineSheet(false)}>
+        <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <View style={[styles.createPostHeader, { marginBottom: 16 }]}>
+            <TouchableOpacity onPress={() => setShowCuisineSheet(false)}>
+              <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_500Medium", fontSize: 15 }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>Tag Cuisine</Text>
+            <View style={{ width: 60 }} />
+          </View>
+          <ScrollView>
+            <View style={styles.cuisineGrid}>
+              {COMPOSE_CUISINES.map((c) => (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.cuisineGridItem, {
+                    backgroundColor: newCuisine === c ? colors.primary : colors.card,
+                    borderColor: newCuisine === c ? colors.primary : colors.border,
+                  }]}
+                  onPress={() => { setNewCuisine(c); setShowCuisineSheet(false); }}
+                >
+                  <Text style={{ fontSize: 20 }}>{CUISINE_EMOJIS[c] ?? "🍽️"}</Text>
+                  <Text style={[{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: newCuisine === c ? colors.primaryForeground : colors.foreground }]}>{c}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
         </View>
+      </Modal>
 
-        {/* Cuisine picker sheet */}
-        <Modal visible={showCuisineSheet} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowCuisineSheet(false)}>
-          <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <View style={[styles.createPostHeader, { marginBottom: 16 }]}>
-              <TouchableOpacity onPress={() => setShowCuisineSheet(false)}>
-                <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_500Medium", fontSize: 15 }]}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>Tag Cuisine</Text>
-              <View style={{ width: 60 }} />
+      {/* ── Recipe picker (sibling of compose modal, not nested) ──────────────── */}
+      <Modal visible={showRecipeSheet} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowRecipeSheet(false)}>
+        <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <View style={[styles.createPostHeader, { marginBottom: 8 }]}>
+            <TouchableOpacity onPress={() => setShowRecipeSheet(false)}>
+              <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_500Medium", fontSize: 15 }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>Link a Recipe</Text>
+            <View style={{ width: 60 }} />
+          </View>
+          <Text style={[{ fontSize: 12, color: colors.textMuted, fontFamily: "Inter_400Regular", marginBottom: 14 }]}>
+            Linking a recipe is optional — you can always add it later.
+          </Text>
+          {savedRecipesList.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={{ fontSize: 32 }}>📖</Text>
+              <Text style={[styles.emptyStateTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", fontSize: 16 }]}>No saved recipes yet</Text>
+              <Text style={[styles.emptyStateText, { color: colors.textSecondary, fontSize: 13 }]}>Save recipes from the Discover tab to link them here</Text>
             </View>
-            <ScrollView>
-              <View style={styles.cuisineGrid}>
-                {COMPOSE_CUISINES.map((c) => (
+          ) : (
+            <FlatList
+              data={savedRecipesList}
+              keyExtractor={(r) => r.id}
+              contentContainerStyle={{ gap: 10 }}
+              renderItem={({ item }) => {
+                const imgSrc = getRecipeImageSource(item.image, item.id);
+                const isSelected = composerRecipe?.id === item.id;
+                return (
                   <TouchableOpacity
-                    key={c}
-                    style={[styles.cuisineGridItem, {
-                      backgroundColor: newCuisine === c ? colors.primary : colors.card,
-                      borderColor: newCuisine === c ? colors.primary : colors.border,
+                    style={[composeStyles.recipePickerItem, {
+                      backgroundColor: isSelected ? colors.primary + "15" : colors.card,
+                      borderColor: isSelected ? colors.primary : colors.border,
                     }]}
-                    onPress={() => { setNewCuisine(c); setShowCuisineSheet(false); }}
+                    onPress={() => { setComposerRecipe({ id: item.id, title: item.title, image: item.image }); setShowRecipeSheet(false); }}
                   >
-                    <Text style={{ fontSize: 20 }}>{CUISINE_EMOJIS[c] ?? "🍽️"}</Text>
-                    <Text style={[{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: newCuisine === c ? colors.primaryForeground : colors.foreground }]}>{c}</Text>
+                    <View style={[composeStyles.recipePickerThumb, { backgroundColor: colors.muted, overflow: "hidden" }]}>
+                      {imgSrc ? (
+                        <Image source={imgSrc as any} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                      ) : (
+                        <Text style={{ fontSize: 20 }}>🍽</Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
+                      <Text style={[{ fontSize: 12, color: colors.textSecondary, fontFamily: "Inter_400Regular", marginTop: 3 }]}>{item.cuisine} · {item.prepTime + item.cookTime}m</Text>
+                    </View>
+                    {isSelected && <Feather name="check-circle" size={20} color={colors.primary} />}
                   </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        </Modal>
-
-        {/* Recipe picker sheet */}
-        <Modal visible={showRecipeSheet} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setShowRecipeSheet(false)}>
-          <View style={[styles.commentModal, { backgroundColor: colors.background }]}>
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <View style={[styles.createPostHeader, { marginBottom: 8 }]}>
-              <TouchableOpacity onPress={() => setShowRecipeSheet(false)}>
-                <Text style={[{ color: colors.textSecondary, fontFamily: "Inter_500Medium", fontSize: 15 }]}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={[styles.commentModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 0 }]}>Link a Recipe</Text>
-              <View style={{ width: 60 }} />
-            </View>
-            <Text style={[{ fontSize: 12, color: colors.textMuted, fontFamily: "Inter_400Regular", marginBottom: 14 }]}>
-              Linking a recipe is optional — you can always edit your post and add it later.
-            </Text>
-            {savedRecipesList.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={{ fontSize: 32 }}>📖</Text>
-                <Text style={[styles.emptyStateTitle, { color: colors.foreground, fontFamily: "Inter_700Bold", fontSize: 16 }]}>No saved recipes yet</Text>
-                <Text style={[styles.emptyStateText, { color: colors.textSecondary, fontSize: 13 }]}>Save recipes from the Discover tab to link them here</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={savedRecipesList}
-                keyExtractor={(r) => r.id}
-                contentContainerStyle={{ gap: 10 }}
-                renderItem={({ item }) => {
-                  const imgSrc = getRecipeImageSource(item.image, item.id);
-                  const isSelected = composerRecipe?.id === item.id;
-                  return (
-                    <TouchableOpacity
-                      style={[composeStyles.recipePickerItem, {
-                        backgroundColor: isSelected ? colors.primary + "15" : colors.card,
-                        borderColor: isSelected ? colors.primary : colors.border,
-                      }]}
-                      onPress={() => { setComposerRecipe({ id: item.id, title: item.title, image: item.image }); setShowRecipeSheet(false); }}
-                    >
-                      <View style={[composeStyles.recipePickerThumb, { backgroundColor: colors.muted, overflow: "hidden" }]}>
-                        {imgSrc ? (
-                          <Image source={imgSrc} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
-                        ) : (
-                          <Text style={{ fontSize: 20 }}>🍽</Text>
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }]} numberOfLines={2}>{item.title}</Text>
-                        <Text style={[{ fontSize: 12, color: colors.textSecondary, fontFamily: "Inter_400Regular", marginTop: 3 }]}>{item.cuisine} · {item.prepTime + item.cookTime}m</Text>
-                      </View>
-                      {isSelected && <Feather name="check-circle" size={20} color={colors.primary} />}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-            )}
-          </View>
-        </Modal>
+                );
+              }}
+            />
+          )}
+        </View>
       </Modal>
 
       {/* ── Notifications Modal ──────────────────────────────────────────────── */}
