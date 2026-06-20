@@ -23,6 +23,7 @@
       }
     },
     "android": {
+      "package": "com.pantryswipe.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#141210"
@@ -32,7 +33,10 @@
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
       ]
     },
     "web": {
@@ -64,7 +68,16 @@
         {
           "locationWhenInUsePermission": "PantrySwipe uses your location to show nearby food posts and restaurants."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#F5A623",
+          "sounds": []
+        }
+      ],
+      "react-native-purchases"
     ],
     "experiments": {
       "typedRoutes": true
