@@ -1,13 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
-  Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -64,6 +66,16 @@ function formatCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
+// ─── Comment type ─────────────────────────────────────────────────────────────
+
+interface LocalComment {
+  id: string;
+  user: string;
+  avatar: string;
+  text: string;
+  timeAgo: string;
+}
+
 // ─── Post card component ──────────────────────────────────────────────────────
 
 interface PostCardProps {
@@ -71,20 +83,29 @@ interface PostCardProps {
   index: number;
   accent: string;
   colors: ReturnType<typeof useColors>;
-  onRecipePress: (id: string) => void;
   isLast: boolean;
 }
 
-function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCardProps) {
+function PostCard({ post, index, accent, colors, isLast }: PostCardProps) {
+  // Own router — so recipe navigation works without a prop callback
+  const router = useRouter();
+  const inputRef = useRef<TextInput>(null);
+
   const imgSrc = getSocialImageSource(post.image, index, post.recipeId);
   const avatarColors = [accent, "#F5A623", "#4CAF76", "#5B8EF5", "#C2185B"];
   const avatarBg = avatarColors[index % avatarColors.length];
 
+  // ── Local interaction state ──
   const [liked, setLiked] = useState(post.liked);
   const [saved, setSaved] = useState(post.saved);
   const [followed, setFollowed] = useState(false);
   const [likeCount, setLikeCount] = useState(post.likes);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<LocalComment[]>([]);
+  const [commentCount, setCommentCount] = useState(post.comments);
+  const [newComment, setNewComment] = useState("");
 
+  // ── Handlers ──
   const handleLike = () => {
     const next = !liked;
     setLiked(next);
@@ -92,11 +113,22 @@ function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCa
   };
 
   const handleSave = () => setSaved((s) => !s);
-
   const handleFollow = () => setFollowed((f) => !f);
+  const handleOpenComments = () => setShowComments(true);
 
-  const handleComment = () =>
-    Alert.alert("Comments", `${post.comments} comment${post.comments !== 1 ? "s" : ""} on this post.`);
+  const handleAddComment = () => {
+    if (!newComment.trim()) return;
+    const c: LocalComment = {
+      id: String(Date.now()),
+      user: "you",
+      avatar: "Y",
+      text: newComment.trim(),
+      timeAgo: "just now",
+    };
+    setComments((prev) => [...prev, c]);
+    setCommentCount((n) => n + 1);
+    setNewComment("");
+  };
 
   const handleShare = () =>
     Share.share({
@@ -105,7 +137,7 @@ function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCa
     }).catch(() => null);
 
   const handleRecipe = () => {
-    if (post.recipeId != null) onRecipePress(post.recipeId);
+    if (post.recipeId) router.push(`/recipe/${post.recipeId}`);
   };
 
   return (
@@ -118,9 +150,7 @@ function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCa
           </View>
         </View>
         <View style={styles.postMeta}>
-          <Text style={[styles.postUsername, { color: colors.foreground }]}>
-            {post.username}
-          </Text>
+          <Text style={[styles.postUsername, { color: colors.foreground }]}>{post.username}</Text>
           <Text style={[styles.postTime, { color: colors.textMuted }]}>{post.timeAgo}</Text>
         </View>
         <TouchableOpacity
@@ -150,8 +180,8 @@ function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCa
         <Image source={imgSrc} style={styles.postImage} resizeMode="cover" />
       )}
 
-      {/* Recipe link */}
-      {post.recipeName != null && (
+      {/* Recipe chip — taps directly to recipe screen */}
+      {post.recipeName != null && post.recipeId != null && (
         <TouchableOpacity
           style={[styles.recipeChip, { backgroundColor: accent + "14", borderColor: accent + "35" }]}
           onPress={handleRecipe}
@@ -173,10 +203,10 @@ function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCa
             {formatCount(likeCount)}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleComment} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments} activeOpacity={0.7}>
           <Feather name="message-circle" size={18} color={colors.textMuted} />
           <Text style={[styles.actionCount, { color: colors.textMuted }]}>
-            {String(post.comments)}
+            {formatCount(commentCount)}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare} activeOpacity={0.7}>
@@ -187,6 +217,81 @@ function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCa
           <Feather name="bookmark" size={18} color={saved ? accent : colors.textMuted} />
         </TouchableOpacity>
       </View>
+
+      {/* ── Comment modal — same pattern as social.tsx ── */}
+      <Modal
+        visible={showComments}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setShowComments(false)}
+      >
+        <KeyboardAvoidingView
+          style={[styles.commentModal, { backgroundColor: colors.background }]}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* Handle + header */}
+          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
+          <View style={styles.commentModalHeader}>
+            <Text style={[styles.commentModalTitle, { color: colors.foreground }]}>Comments</Text>
+            <TouchableOpacity
+              onPress={() => setShowComments(false)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="x" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Comment list */}
+          <FlatList
+            data={comments}
+            keyExtractor={(c) => c.id}
+            contentContainerStyle={{ gap: 14, paddingBottom: 20, flexGrow: 1 }}
+            ListEmptyComponent={
+              <View style={styles.noComments}>
+                <Text style={{ fontSize: 32 }}>💬</Text>
+                <Text style={[styles.noCommentsText, { color: colors.textSecondary }]}>
+                  No comments yet. Be first!
+                </Text>
+              </View>
+            }
+            renderItem={({ item }: { item: LocalComment }) => (
+              <View style={styles.commentRow}>
+                <View style={[styles.commentAvatar, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.commentAvatarText}>{item.avatar}</Text>
+                </View>
+                <View style={[styles.commentBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.commentUser, { color: colors.primary }]}>@{item.user}</Text>
+                  <Text style={[styles.commentText, { color: colors.foreground }]}>{item.text}</Text>
+                  <Text style={[styles.commentTime, { color: colors.textMuted }]}>{item.timeAgo}</Text>
+                </View>
+              </View>
+            )}
+          />
+
+          {/* Input bar */}
+          <View style={[styles.commentInputBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TextInput
+              ref={inputRef}
+              style={[styles.commentInputText, { color: colors.foreground }]}
+              placeholder="Add a comment…"
+              placeholderTextColor={colors.textMuted}
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+              returnKeyType="send"
+              onSubmitEditing={handleAddComment}
+            />
+            <TouchableOpacity
+              style={[styles.commentSendBtn, { backgroundColor: newComment.trim() ? accent : colors.muted }]}
+              onPress={handleAddComment}
+              disabled={!newComment.trim()}
+              activeOpacity={0.8}
+            >
+              <Feather name="send" size={16} color={newComment.trim() ? "#fff" : colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -390,7 +495,6 @@ export default function CuisineDetailScreen() {
             index={index}
             accent={accent}
             colors={colors}
-            onRecipePress={handleRecipePress}
             isLast={index === cuisinePosts.length - 1}
           />
         )}
@@ -611,6 +715,30 @@ const styles = StyleSheet.create({
   postActions: { flexDirection: "row", alignItems: "center", gap: 20 },
   actionBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
   actionCount: { fontSize: 13, fontFamily: "Inter_400Regular" },
+
+  // Comment modal
+  commentModal: { flex: 1, padding: 20 },
+  modalHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+  commentModalHeader: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", marginBottom: 16,
+  },
+  commentModalTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  noComments: { alignItems: "center", paddingVertical: 40, gap: 10 },
+  noCommentsText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  commentRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
+  commentAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  commentAvatarText: { color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold" },
+  commentBubble: { flex: 1, padding: 12, borderRadius: 14, borderWidth: 1, gap: 4 },
+  commentUser: { fontSize: 13, fontFamily: "Inter_700Bold" },
+  commentText: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  commentTime: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  commentInputBar: {
+    flexDirection: "row", alignItems: "flex-end", gap: 10,
+    padding: 12, borderRadius: 16, borderWidth: 1, marginTop: 8,
+  },
+  commentInputText: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", maxHeight: 80 },
+  commentSendBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 
   // Empty state
   empty: {
