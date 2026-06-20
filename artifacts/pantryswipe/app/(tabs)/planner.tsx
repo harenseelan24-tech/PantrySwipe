@@ -155,7 +155,6 @@ export default function PlannerScreen() {
       <View style={[styles.header, { paddingTop: topPadding + 6 }]}>
         <View>
           <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Meal Planner</Text>
-          <Text style={[styles.headerSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{formatWeekRange(weekDates)}</Text>
         </View>
         <TouchableOpacity
           style={[
@@ -204,15 +203,26 @@ export default function PlannerScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Week navigation */}
-        <View style={styles.weekNav}>
-          <TouchableOpacity style={[styles.navBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setWeekOffset((w) => w - 1)}>
-            <Feather name="chevron-left" size={20} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={[styles.weekLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{formatWeekRange(weekDates)}</Text>
-          <TouchableOpacity style={[styles.navBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setWeekOffset((w) => w + 1)}>
-            <Feather name="chevron-right" size={20} color={colors.foreground} />
-          </TouchableOpacity>
-        </View>
+        {(() => {
+          const today = new Date();
+          const navLabel =
+            view === "Day"
+              ? today.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })
+              : view === "Month"
+              ? weekDates[0].toLocaleDateString("en-US", { month: "long", year: "numeric" })
+              : formatWeekRange(weekDates);
+          return (
+            <View style={styles.weekNav}>
+              <TouchableOpacity style={[styles.navBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setWeekOffset((w) => w - 1)}>
+                <Feather name="chevron-left" size={20} color={colors.foreground} />
+              </TouchableOpacity>
+              <Text style={[styles.weekLabel, { color: colors.foreground, fontFamily: "SpaceGrotesk_700Bold" }]}>{navLabel}</Text>
+              <TouchableOpacity style={[styles.navBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setWeekOffset((w) => w + 1)}>
+                <Feather name="chevron-right" size={20} color={colors.foreground} />
+              </TouchableOpacity>
+            </View>
+          );
+        })()}
 
         {/* Stats */}
         <View style={styles.summaryRow}>
