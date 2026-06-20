@@ -68,8 +68,12 @@ export function useNotifications() {
 
   const markAllRead = useCallback(async () => {
     try {
-      await AsyncStorage.setItem(UNREAD_KEY, "0");
+      await Promise.all([
+        AsyncStorage.setItem(UNREAD_KEY, "0"),
+        AsyncStorage.removeItem(CLEARED_KEY),
+      ]);
       setUnreadCount(0);
+      setCleared(false);
     } catch {}
   }, []);
 
