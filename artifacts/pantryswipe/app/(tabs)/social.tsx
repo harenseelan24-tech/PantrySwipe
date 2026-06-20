@@ -554,7 +554,12 @@ export default function SocialScreen() {
         {trendingByCuisine.map((p, i) => {
           const imgSrc = getSocialImageSource(p.image, i, undefined);
           return (
-            <View key={p.id} style={[styles.trendingCuisineCard, { backgroundColor: colors.card, borderColor: colors.border, overflow: "hidden" }]}>
+            <TouchableOpacity
+              key={p.id}
+              style={[styles.trendingCuisineCard, { backgroundColor: colors.card, borderColor: colors.border, overflow: "hidden" }]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push(`/cuisine/${encodeURIComponent(p.cuisine ?? "")}`); }}
+              activeOpacity={0.82}
+            >
               {imgSrc ? (
                 <Image source={imgSrc} style={styles.trendingCuisineImage} resizeMode="cover" />
               ) : (
@@ -573,7 +578,7 @@ export default function SocialScreen() {
                   🔥 {formatCount(p.likes)}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </ScrollView>
