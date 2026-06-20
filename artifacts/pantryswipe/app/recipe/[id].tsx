@@ -341,6 +341,8 @@ export default function RecipeDetailScreen() {
     if (!recipe || variationLoading) return;
     if (appliedVariation === variationType) { clearVariation(); return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Always reset committed state when switching to a new variation
+    setVarCommitted(false);
     setVariationLoading(variationType);
 
     let applied = false;
@@ -375,12 +377,14 @@ export default function RecipeDetailScreen() {
       // fall through to local engine
     }
 
-    // Local fallback — always applies a meaningful result
+    // Local fallback — always applies a meaningful result.
+    // Pass enrichedIngredients (which carry the correct inPantry flag from the actual
+    // pantry) so that non-substituted items keep their pantry status after Apply.
     if (!applied) {
-      const local = applyLocalVariation(recipe, variationType);
-      const originalNames = new Set(recipe.ingredients.map((i) => i.name.toLowerCase().trim()));
+      const enrichedRecipe = { ...recipe, ingredients: enrichedIngredients };
+      const local = applyLocalVariation(enrichedRecipe, variationType);
+      const originalNames = new Set(enrichedIngredients.map((i) => i.name.toLowerCase().trim()));
       const additions = local.ingredients.filter((ing) => !originalNames.has(ing.name.toLowerCase().trim()));
-      // Build the full modified list (substitutions + originals)
       setVarIngredients(local.ingredients);
       setVarSteps(local.steps);
       setVarNotes(local.notes);
