@@ -9,15 +9,19 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
 import { useApp } from "@/context/AppContext";
 import { MOCK_SOCIAL_POSTS, SocialPost } from "@/data/mockData";
-import { getRecipeImageSource, getSocialImageSource } from "@/constants/recipeImages";
+import {
+  getRecipeImageSource,
+  getSocialImageSource,
+} from "@/constants/recipeImages";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Per-cuisine data ─────────────────────────────────────────────────────────
 
 const CUISINE_EMOJIS: Record<string, string> = {
   Italian: "🍝", Japanese: "🍜", Korean: "🥘", Mexican: "🌮",
@@ -26,16 +30,24 @@ const CUISINE_EMOJIS: Record<string, string> = {
   "Middle Eastern": "🥙", Other: "🍽️",
 };
 
+const CUISINE_ACCENTS: Record<string, string> = {
+  Italian: "#C0392B", Japanese: "#C2185B", Korean: "#E64A19",
+  Mexican: "#E65100", Indian: "#F57F17", Chinese: "#C62828",
+  Thai: "#2E7D32", American: "#1565C0", French: "#6A1B9A",
+  Mediterranean: "#01579B", Vegan: "#1B5E20", Singaporean: "#B71C1C",
+  "Middle Eastern": "#4A148C", Other: "#37474F",
+};
+
 const CUISINE_DESCRIPTIONS: Record<string, string> = {
-  Italian: "Rich pastas, fresh herbs, and timeless flavours from the heart of Europe.",
+  Italian: "Rich pastas, aged cheese, and timeless flavours from the Italian heartland.",
   Japanese: "Elegant umami-forward dishes balancing freshness, technique, and tradition.",
-  Korean: "Bold, spicy, fermented — Korean cooking packs every bite with flavour.",
+  Korean: "Bold, spicy, fermented — Korean cooking packs every bite with big flavour.",
   Mexican: "Vibrant colours, smoky chillis, and centuries of culinary heritage.",
-  Indian: "A universe of spices, aromatics, and deeply satisfying comfort food.",
-  Chinese: "Wok-kissed depth, regional variety, and masterful balance.",
+  Indian: "A universe of spice, aromatics, and deeply satisfying comfort food.",
+  Chinese: "Wok-kissed depth, regional variety, and masterful balance of flavour.",
   Thai: "Sweet, sour, salty, spicy — Thai cuisine hits all four notes at once.",
   American: "Generous portions, comfort classics, and crowd-pleasing favourites.",
-  French: "Refined techniques, buttery richness, and the gold standard of cooking.",
+  French: "Refined technique, buttery richness, and the gold standard of cuisine.",
   Mediterranean: "Olive oil, fresh vegetables, and the healthy flavours of the sea.",
   Vegan: "Plant-powered dishes that prove you never have to sacrifice flavour.",
   Singaporean: "A melting pot of Malay, Chinese, and Indian flavours at its finest.",
@@ -50,69 +62,92 @@ function formatCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-// ─── Post card (extracted so FlatList renderItem is fully typed) ───────────────
+// ─── Post card component ──────────────────────────────────────────────────────
 
 interface PostCardProps {
   post: SocialPost;
   index: number;
+  accent: string;
   colors: ReturnType<typeof useColors>;
   onRecipePress: (id: string) => void;
+  isLast: boolean;
 }
 
-function PostCard({ post, index, colors, onRecipePress }: PostCardProps) {
+function PostCard({ post, index, accent, colors, onRecipePress, isLast }: PostCardProps) {
   const imgSrc = getSocialImageSource(post.image, index, post.recipeId);
+  const avatarColors = [accent, "#F5A623", "#4CAF76", "#5B8EF5", "#C2185B"];
+  const avatarBg = avatarColors[index % avatarColors.length];
+
   return (
-    <View style={[styles.postCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.postItem, !isLast && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+      {/* Header row */}
       <View style={styles.postHeader}>
-        <View style={[styles.postAvatar, { backgroundColor: colors.primary }]}>
-          <Text style={styles.postAvatarText}>{post.userAvatar}</Text>
+        <View style={[styles.postAvatarRing, { borderColor: avatarBg + "55" }]}>
+          <View style={[styles.postAvatar, { backgroundColor: avatarBg }]}>
+            <Text style={styles.postAvatarText}>{post.userAvatar}</Text>
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.postUsername, { color: colors.foreground }]}>{post.username}</Text>
+        <View style={styles.postMeta}>
+          <Text style={[styles.postUsername, { color: colors.foreground }]}>
+            {post.username}
+          </Text>
           <Text style={[styles.postTime, { color: colors.textMuted }]}>{post.timeAgo}</Text>
         </View>
-        <View style={[styles.trendingBadge, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "30" }]}>
-          <Text style={[styles.trendingBadgeText, { color: colors.primary }]}>🔥 Trending</Text>
-        </View>
+        <TouchableOpacity
+          style={[styles.followBtn, { borderColor: accent + "55" }]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.followBtnText, { color: accent }]}>Follow</Text>
+        </TouchableOpacity>
       </View>
 
+      {/* Caption */}
+      <Text style={[styles.postCaption, { color: colors.textSecondary }]} numberOfLines={3}>
+        {post.caption}
+      </Text>
+
+      {/* Image */}
       {imgSrc != null && (
         <Image source={imgSrc} style={styles.postImage} resizeMode="cover" />
       )}
 
-      <View style={styles.postBody}>
-        <Text style={[styles.postCaption, { color: colors.foreground }]} numberOfLines={3}>
-          {post.caption}
-        </Text>
+      {/* Recipe link */}
+      {post.recipeName != null && (
+        <TouchableOpacity
+          style={[styles.recipeChip, { backgroundColor: accent + "14", borderColor: accent + "35" }]}
+          onPress={() => post.recipeId != null && onRecipePress(post.recipeId)}
+          activeOpacity={0.75}
+        >
+          <Feather name="book-open" size={11} color={accent} />
+          <Text style={[styles.recipeChipText, { color: accent }]} numberOfLines={1}>
+            {post.recipeName}
+          </Text>
+          <Feather name="chevron-right" size={11} color={accent} />
+        </TouchableOpacity>
+      )}
 
-        {post.recipeName != null && (
-          <TouchableOpacity
-            style={[styles.recipeLink, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30" }]}
-            onPress={() => post.recipeId != null && onRecipePress(post.recipeId)}
-            activeOpacity={0.8}
-          >
-            <Feather name="book-open" size={12} color={colors.primary} />
-            <Text style={[styles.recipeLinkText, { color: colors.primary }]} numberOfLines={1}>
-              {post.recipeName}
-            </Text>
-            <Feather name="arrow-right" size={12} color={colors.primary} />
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.postActions}>
-          <View style={styles.postActionGroup}>
-            <Feather name="heart" size={16} color={post.liked ? "#E84040" : colors.textMuted} />
-            <Text style={[styles.postActionCount, { color: colors.textSecondary }]}>
-              {formatCount(post.likes)}
-            </Text>
-          </View>
-          <View style={styles.postActionGroup}>
-            <Feather name="message-circle" size={16} color={colors.textMuted} />
-            <Text style={[styles.postActionCount, { color: colors.textSecondary }]}>
-              {String(post.comments)}
-            </Text>
-          </View>
-        </View>
+      {/* Actions */}
+      <View style={styles.postActions}>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+          <Feather name="heart" size={18} color={post.liked ? "#E84040" : colors.textMuted} />
+          <Text style={[styles.actionCount, { color: colors.textMuted }]}>
+            {formatCount(post.likes)}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+          <Feather name="message-circle" size={18} color={colors.textMuted} />
+          <Text style={[styles.actionCount, { color: colors.textMuted }]}>
+            {String(post.comments)}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+          <Feather name="share-2" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+          <Feather name="bookmark" size={18} color={post.saved ? accent : colors.textMuted} />
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -129,6 +164,7 @@ export default function CuisineDetailScreen() {
 
   const cuisineName = Array.isArray(name) ? name[0] : (name ?? "");
   const emoji = CUISINE_EMOJIS[cuisineName] ?? "🍽️";
+  const accent = CUISINE_ACCENTS[cuisineName] ?? "#F5A623";
   const description =
     CUISINE_DESCRIPTIONS[cuisineName] ??
     `Explore the best ${cuisineName} recipes and posts from the community.`;
@@ -152,77 +188,115 @@ export default function CuisineDetailScreen() {
 
   const handleRecipePress = (id: string) => router.push(`/recipe/${id}`);
 
-  // ── Recipes header component ──
+  // ── List header (hero + stats + recipes) ──────────────────────────────────
   const ListHeader = (
     <View>
-      {/* Hero */}
-      <View style={[styles.heroBanner, { backgroundColor: colors.primary + "10", borderBottomColor: colors.border }]}>
-        <Text style={styles.heroEmoji}>{emoji}</Text>
-        <Text style={[styles.heroCuisineName, { color: colors.foreground }]}>{cuisineName}</Text>
-        <Text style={[styles.heroDescription, { color: colors.textSecondary }]}>{description}</Text>
-      </View>
+      {/* ── Hero gradient ── */}
+      <LinearGradient
+        colors={[accent, accent + "88", colors.background] as readonly [string, string, string]}
+        style={[styles.hero, { paddingTop: topPadding + 16 }]}
+      >
+        {/* Glow ring behind emoji */}
+        <View style={[styles.emojiGlow, { backgroundColor: accent + "33" }]}>
+          <View style={[styles.emojiGlowInner, { backgroundColor: accent + "55" }]}>
+            <Text style={styles.heroEmoji}>{emoji}</Text>
+          </View>
+        </View>
 
-      {/* Stats */}
-      <View style={[styles.statsRow, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.foreground }]}>{cuisinePosts.length}</Text>
-          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Posts</Text>
+        <Text style={styles.heroName}>{cuisineName}</Text>
+        <Text style={styles.heroDesc}>{description}</Text>
+      </LinearGradient>
+
+      {/* ── Stats strip ── */}
+      <View style={[styles.statsStrip, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        <View style={styles.statCell}>
+          <Text style={[styles.statNum, { color: colors.foreground }]}>{cuisinePosts.length}</Text>
+          <Text style={[styles.statLbl, { color: colors.textMuted }]}>Posts</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.foreground }]}>{cuisineRecipes.length}</Text>
-          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Recipes</Text>
+        <View style={styles.statCell}>
+          <Text style={[styles.statNum, { color: colors.foreground }]}>{cuisineRecipes.length}</Text>
+          <Text style={[styles.statLbl, { color: colors.textMuted }]}>Recipes</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>{formatCount(totalLikes)}</Text>
-          <Text style={[styles.statLabel, { color: colors.textMuted }]}>Likes</Text>
+        <View style={styles.statCell}>
+          <Text style={[styles.statNum, { color: accent }]}>{formatCount(totalLikes)}</Text>
+          <Text style={[styles.statLbl, { color: colors.textMuted }]}>Likes</Text>
         </View>
       </View>
 
-      {/* Recipes horizontal scroll */}
+      {/* ── Recipes horizontal scroll ── */}
       {cuisineRecipes.length > 0 && (
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionAccent, { backgroundColor: colors.primary }]} />
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Recipes</Text>
-            <Text style={[styles.sectionCount, { color: colors.textMuted }]}>{cuisineRecipes.length} found</Text>
+          <View style={styles.sectionRow}>
+            <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>RECIPES</Text>
+            <Text style={[styles.sectionCount, { color: accent }]}>
+              {cuisineRecipes.length} found
+            </Text>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipesRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.recipesRow}
+            decelerationRate="fast"
+          >
             {cuisineRecipes.map((recipe) => {
               const imgSrc = getRecipeImageSource(null, recipe.id);
               const matchPct = getPantryMatchScore(recipe);
+              const totalTime = recipe.prepTime + recipe.cookTime;
               return (
                 <TouchableOpacity
                   key={recipe.id}
-                  style={[styles.recipeCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => router.push(`/recipe/${recipe.id}`)}
+                  style={[styles.recipeCard, { backgroundColor: colors.card }]}
+                  onPress={() => handleRecipePress(recipe.id)}
                   activeOpacity={0.85}
                 >
-                  {imgSrc != null ? (
-                    <Image source={imgSrc} style={styles.recipeCardImage} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.recipeCardImage, { backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center" }]}>
-                      <Text style={{ fontSize: 30 }}>{emoji}</Text>
-                    </View>
-                  )}
-                  {matchPct >= 60 && (
-                    <View style={[styles.matchBadge, { backgroundColor: "#4CAF76" }]}>
-                      <Text style={styles.matchBadgeText}>{matchPct}% match</Text>
-                    </View>
-                  )}
-                  <View style={styles.recipeCardBody}>
-                    <Text style={[styles.recipeCardTitle, { color: colors.foreground }]} numberOfLines={2}>
-                      {recipe.title}
-                    </Text>
-                    <View style={styles.recipeCardMeta}>
-                      <View style={[styles.difficultyDot, { backgroundColor: DIFFICULTY_COLORS[recipe.difficulty] ?? colors.textMuted }]} />
-                      <Text style={[styles.recipeCardMetaText, { color: colors.textSecondary }]}>
-                        {recipe.difficulty} · {recipe.prepTime + recipe.cookTime}m
+                  {/* Image or placeholder */}
+                  <View style={styles.recipeImageWrap}>
+                    {imgSrc != null ? (
+                      <Image source={imgSrc} style={styles.recipeImage} resizeMode="cover" />
+                    ) : (
+                      <LinearGradient
+                        colors={[accent + "55", accent + "22"] as readonly [string, string]}
+                        style={[styles.recipeImage, styles.recipeImagePlaceholder]}
+                      >
+                        <Text style={styles.recipeImageEmoji}>{emoji}</Text>
+                      </LinearGradient>
+                    )}
+                    {/* Title overlay gradient */}
+                    <LinearGradient
+                      colors={["transparent", "rgba(0,0,0,0.78)"] as readonly [string, string]}
+                      style={styles.recipeOverlay}
+                    >
+                      {matchPct >= 50 && (
+                        <View style={[styles.matchBadge, { backgroundColor: "#4CAF76" }]}>
+                          <Text style={styles.matchBadgeText}>{matchPct}%</Text>
+                        </View>
+                      )}
+                      <Text style={styles.recipeCardTitle} numberOfLines={2}>
+                        {recipe.title}
                       </Text>
-                    </View>
-                    <Text style={[styles.recipeCardCal, { color: colors.textMuted }]}>{recipe.calories} kcal</Text>
+                      <View style={styles.recipeCardMeta}>
+                        <View style={[styles.diffDot, { backgroundColor: DIFFICULTY_COLORS[recipe.difficulty] ?? "#999" }]} />
+                        <Text style={styles.recipeCardMetaText}>
+                          {recipe.difficulty} · {totalTime}m
+                        </Text>
+                      </View>
+                    </LinearGradient>
+                  </View>
+
+                  {/* Calorie footer */}
+                  <View style={styles.recipeCardFooter}>
+                    <Feather name="zap" size={11} color={colors.textMuted} />
+                    <Text style={[styles.recipeCardCal, { color: colors.textMuted }]}>
+                      {recipe.calories} kcal
+                    </Text>
+                    <View style={{ flex: 1 }} />
+                    <Feather name="star" size={11} color="#F5A623" />
+                    <Text style={[styles.recipeCardCal, { color: colors.textMuted }]}>
+                      {recipe.rating.toFixed(1)}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -231,12 +305,13 @@ export default function CuisineDetailScreen() {
         </View>
       )}
 
-      {/* Posts section label */}
+      {/* ── Posts section label ── */}
       {cuisinePosts.length > 0 && (
-        <View style={[styles.sectionHeader, { marginHorizontal: 16, marginTop: 18, marginBottom: 8 }]}>
-          <View style={[styles.sectionAccent, { backgroundColor: colors.textMuted }]} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Community Posts</Text>
-          <Text style={[styles.sectionCount, { color: colors.textMuted }]}>{cuisinePosts.length} posts</Text>
+        <View style={[styles.sectionRow, { marginHorizontal: 20, marginTop: 28, marginBottom: 4 }]}>
+          <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>COMMUNITY</Text>
+          <Text style={[styles.sectionCount, { color: accent }]}>
+            {cuisinePosts.length} posts
+          </Text>
         </View>
       )}
     </View>
@@ -244,25 +319,16 @@ export default function CuisineDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: topPadding + 8, backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+      {/* Floating back button — sits above FlatList */}
+      <View style={[styles.floatingBackWrap, { top: topPadding + 10 }]} pointerEvents="box-none">
         <TouchableOpacity
-          style={[styles.backBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+          style={[styles.floatingBack, { backgroundColor: "rgba(0,0,0,0.45)" }]}
           onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          activeOpacity={0.8}
         >
-          <Feather name="arrow-left" size={18} color={colors.foreground} />
+          <Feather name="arrow-left" size={18} color="#fff" />
         </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerEmoji}>{emoji}</Text>
-          <View>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]}>{cuisineName}</Text>
-            <Text style={[styles.headerSub, { color: colors.textMuted }]}>Cuisine</Text>
-          </View>
-        </View>
-
-        <View style={{ width: 38 }} />
       </View>
 
       <FlatList
@@ -272,10 +338,10 @@ export default function CuisineDetailScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={{ fontSize: 48 }}>{emoji}</Text>
+          <View style={styles.empty}>
+            <Text style={{ fontSize: 52 }}>{emoji}</Text>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No posts yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
+            <Text style={[styles.emptySub, { color: colors.textMuted }]}>
               Be the first to share a {cuisineName} dish!
             </Text>
           </View>
@@ -284,8 +350,10 @@ export default function CuisineDetailScreen() {
           <PostCard
             post={item}
             index={index}
+            accent={accent}
             colors={colors}
             onRecipePress={handleRecipePress}
+            isLast={index === cuisinePosts.length - 1}
           />
         )}
       />
@@ -298,73 +366,219 @@ export default function CuisineDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  header: {
+  // Floating back button
+  floatingBackWrap: {
+    position: "absolute",
+    left: 16,
+    zIndex: 10,
+  },
+  floatingBack: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Hero
+  hero: {
+    alignItems: "center",
+    paddingBottom: 36,
+    paddingHorizontal: 24,
+  },
+  emojiGlow: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  emojiGlowInner: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroEmoji: { fontSize: 52 },
+  heroName: {
+    fontSize: 30,
+    fontFamily: "Inter_700Bold",
+    color: "#FFFFFF",
+    letterSpacing: -0.8,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  heroDesc: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    color: "rgba(255,255,255,0.72)",
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 300,
+  },
+
+  // Stats
+  statsStrip: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  statCell: { flex: 1, alignItems: "center", paddingVertical: 18 },
+  statNum: { fontSize: 22, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
+  statLbl: { fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 2, letterSpacing: 0.3 },
+  statDivider: { width: StyleSheet.hairlineWidth, marginVertical: 14 },
+
+  // Section labels
+  section: { marginTop: 28 },
+  sectionRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginHorizontal: 20,
+    marginBottom: 14,
   },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 10, borderWidth: 1,
-    alignItems: "center", justifyContent: "center",
+  sectionLabel: {
+    fontSize: 10,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1.2,
   },
-  headerCenter: { flexDirection: "row", alignItems: "center", gap: 10 },
-  headerEmoji: { fontSize: 26 },
-  headerTitle: { fontSize: 17, fontFamily: "Inter_700Bold", letterSpacing: -0.3 },
-  headerSub: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 1 },
-
-  heroBanner: {
-    alignItems: "center", paddingVertical: 32, paddingHorizontal: 24,
-    borderBottomWidth: StyleSheet.hairlineWidth, gap: 6,
+  sectionCount: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
   },
-  heroEmoji: { fontSize: 64, marginBottom: 4 },
-  heroCuisineName: { fontSize: 26, fontFamily: "Inter_700Bold", letterSpacing: -0.5, textAlign: "center" },
-  heroDescription: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20, marginTop: 4 },
 
-  statsRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
-  statItem: { flex: 1, alignItems: "center", paddingVertical: 16 },
-  statValue: { fontSize: 20, fontFamily: "Inter_700Bold", letterSpacing: -0.5 },
-  statLabel: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
-  statDivider: { width: StyleSheet.hairlineWidth, marginVertical: 12 },
+  // Recipe cards
+  recipesRow: { paddingHorizontal: 20, gap: 12, paddingBottom: 4 },
+  recipeCard: {
+    width: 172,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  recipeImageWrap: { position: "relative" },
+  recipeImage: { width: 172, height: 134 },
+  recipeImagePlaceholder: { alignItems: "center", justifyContent: "center" },
+  recipeImageEmoji: { fontSize: 38 },
+  recipeOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    paddingTop: 32,
+    justifyContent: "flex-end",
+  },
+  matchBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 6,
+  },
+  matchBadgeText: {
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
+  },
+  recipeCardTitle: {
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+    color: "#fff",
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  recipeCardMeta: { flexDirection: "row", alignItems: "center", gap: 5 },
+  diffDot: { width: 5, height: 5, borderRadius: 3 },
+  recipeCardMetaText: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.8)" },
+  recipeCardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  recipeCardCal: { fontSize: 11, fontFamily: "Inter_400Regular" },
 
-  section: { marginTop: 20 },
-  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 16, marginBottom: 12 },
-  sectionAccent: { width: 3, height: 14, borderRadius: 2 },
-  sectionTitle: { fontSize: 14, fontFamily: "Inter_700Bold", flex: 1 },
-  sectionCount: { fontSize: 11, fontFamily: "Inter_400Regular" },
-
-  recipesRow: { paddingHorizontal: 16, gap: 12, paddingBottom: 4 },
-  recipeCard: { width: 160, borderRadius: 14, borderWidth: 1, overflow: "hidden" },
-  recipeCardImage: { width: "100%", height: 110 },
-  matchBadge: { position: "absolute", top: 8, right: 8, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3 },
-  matchBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#fff" },
-  recipeCardBody: { padding: 10, gap: 4 },
-  recipeCardTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", lineHeight: 17 },
-  recipeCardMeta: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 },
-  difficultyDot: { width: 6, height: 6, borderRadius: 3 },
-  recipeCardMetaText: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  recipeCardCal: { fontSize: 10, fontFamily: "Inter_400Regular" },
-
-  postCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 18, borderWidth: 1, overflow: "hidden" },
-  postHeader: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14 },
-  postAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  // Post items
+  postItem: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  postHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+  },
+  postAvatarRing: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  postAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   postAvatarText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#fff" },
+  postMeta: { flex: 1 },
   postUsername: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   postTime: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 1 },
-  trendingBadge: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 3 },
-  trendingBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
-  postImage: { width: "100%", aspectRatio: 4 / 3 },
-  postBody: { padding: 14, gap: 8 },
-  postCaption: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
-  recipeLink: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, borderWidth: 1 },
-  recipeLinkText: { fontSize: 12, fontFamily: "Inter_600SemiBold", flex: 1 },
-  postActions: { flexDirection: "row", gap: 16, marginTop: 2 },
-  postActionGroup: { flexDirection: "row", alignItems: "center", gap: 5 },
-  postActionCount: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  followBtn: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  followBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  postCaption: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  postImage: {
+    width: "100%",
+    aspectRatio: 4 / 3,
+    borderRadius: 12,
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  recipeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  recipeChipText: {
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    maxWidth: 200,
+  },
+  postActions: { flexDirection: "row", alignItems: "center", gap: 20 },
+  actionBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
+  actionCount: { fontSize: 13, fontFamily: "Inter_400Regular" },
 
-  emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 60, gap: 10 },
-  emptyTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  emptySubtitle: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
+  // Empty state
+  empty: {
+    alignItems: "center",
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+    gap: 10,
+  },
+  emptyTitle: { fontSize: 18, fontFamily: "Inter_700Bold", marginTop: 4 },
+  emptySub: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 },
 });
