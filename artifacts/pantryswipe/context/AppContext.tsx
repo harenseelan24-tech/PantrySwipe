@@ -180,6 +180,8 @@ interface UserProfile {
   goal: string;
   weeklyBudget: number;
   setupComplete: boolean;
+  photoUri?: string;
+  bio?: string;
 }
 
 interface CookingStats {

@@ -3,13 +3,17 @@ import {
   Alert,
   Dimensions,
   Image,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useColors } from "@/hooks/useColors";
@@ -81,13 +85,18 @@ export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { userProfile, stats, savedRecipes, cookedRecipes, liveRecipes, signOut, followingList } = useApp();
+  const { userProfile, updateProfile, stats, savedRecipes, cookedRecipes, liveRecipes, signOut, followingList } = useApp();
   const { isSubscribed } = useSubscription();
   const scrollRef = useRef<ScrollView>(null);
   const [activeTab, setActiveTab] = useState<(typeof PROFILE_TABS)[number]>("Recipes");
   const [recipeSubtab, setRecipeSubtab] = useState<(typeof RECIPE_SUBTABS)[number]>("Saved Later");
   const [showAllergies, setShowAllergies] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  // Edit profile modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState(userProfile.name);
+  const [editBio, setEditBio] = useState(userProfile.bio ?? "");
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
@@ -96,6 +105,73 @@ export default function ProfileScreen() {
     setSigningOut(true);
     await signOut();
     router.replace("/welcome");
+  };
+
+  // ── Photo picker ──────────────────────────────────────────────────────────
+  const handlePickPhoto = async () => {
+    // Show action sheet to choose source
+    Alert.alert(
+      "Change Profile Photo",
+      "Choose a source",
+      [
+        {
+          text: "Take Photo",
+          onPress: async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== "granted") {
+              Alert.alert("Permission needed", "Please allow camera access in Settings to take a photo.");
+              return;
+            }
+            const result = await ImagePicker.launchCameraAsync({
+              mediaTypes: "images",
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+            });
+            if (!result.canceled && result.assets[0]) {
+              updateProfile({ photoUri: result.assets[0].uri });
+            }
+          },
+        },
+        {
+          text: "Choose from Library",
+          onPress: async () => {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== "granted") {
+              Alert.alert("Permission needed", "Please allow photo library access in Settings to choose a photo.");
+              return;
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: "images",
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.8,
+            });
+            if (!result.canceled && result.assets[0]) {
+              updateProfile({ photoUri: result.assets[0].uri });
+            }
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  };
+
+  // ── Save edit profile ─────────────────────────────────────────────────────
+  const handleSaveProfile = () => {
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      Alert.alert("Name required", "Please enter your name.");
+      return;
+    }
+    updateProfile({ name: trimmedName, bio: editBio.trim() });
+    setShowEditModal(false);
+  };
+
+  const openEditModal = () => {
+    setEditName(userProfile.name);
+    setEditBio(userProfile.bio ?? "");
+    setShowEditModal(true);
   };
 
   const savedRecipesList = liveRecipes.filter((r) => savedRecipes.includes(r.id));
@@ -136,17 +212,22 @@ export default function ProfileScreen() {
           {/* Avatar row */}
           <View style={styles.avatarRow}>
             {/* Avatar — tappable to change profile photo */}
-            <TouchableOpacity activeOpacity={0.8} onPress={() => Alert.alert("Change Photo", "Choose a new profile photo", [{ text: "Camera", onPress: () => {} }, { text: "Photo Library", onPress: () => {} }, { text: "Cancel", style: "cancel" }])}>
+            <TouchableOpacity activeOpacity={0.8} onPress={handlePickPhoto}>
               <View style={styles.avatarRingOuter}>
                 <View style={[styles.avatarTrack, { borderColor: streakActive ? colors.primary + "30" : colors.border }]} />
                 {streakActive && (
                   <View style={[styles.avatarArc, { borderColor: colors.primary, borderTopColor: "transparent" }]} />
                 )}
-                <View style={[styles.avatarInner, { backgroundColor: colors.primary }]}>
-                  <Text style={[styles.avatarLetter, { fontFamily: "Inter_700Bold" }]}>
-                    {userProfile.name[0]?.toUpperCase()}
-                  </Text>
-                </View>
+                {/* Show real photo if set, otherwise initials */}
+                {userProfile.photoUri ? (
+                  <Image source={{ uri: userProfile.photoUri }} style={styles.avatarPhoto} />
+                ) : (
+                  <View style={[styles.avatarInner, { backgroundColor: colors.primary }]}>
+                    <Text style={[styles.avatarLetter, { fontFamily: "Inter_700Bold" }]}>
+                      {userProfile.name[0]?.toUpperCase()}
+                    </Text>
+                  </View>
+                )}
                 {streakActive && (
                   <View style={[styles.streakBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
                     <Text style={styles.streakBadgeEmoji}>🔥</Text>
@@ -164,11 +245,15 @@ export default function ProfileScreen() {
 
             {/* Edit Profile + Settings */}
             <View style={styles.editRow}>
-              <TouchableOpacity style={[styles.editBtn, { borderColor: colors.border, backgroundColor: colors.card }]}>
+              <TouchableOpacity
+                style={[styles.editBtn, { borderColor: colors.border, backgroundColor: colors.card }]}
+                onPress={openEditModal}
+                activeOpacity={0.75}
+              >
                 <Feather name="edit-2" size={13} color={colors.foreground} />
                 <Text style={[styles.editBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>Edit Profile</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.settingsBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => router.push("/settings")}>
+              <TouchableOpacity style={[styles.settingsBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={() => router.push("/settings")} activeOpacity={0.75}>
                 <Feather name="settings" size={15} color={colors.foreground} />
               </TouchableOpacity>
             </View>
@@ -629,6 +714,107 @@ export default function ProfileScreen() {
 
         </View>
       </ScrollView>
+
+      {/* ── Edit Profile Modal ─────────────────────────────────────────────── */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={[styles.editModal, { backgroundColor: colors.background }]}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          {/* Handle */}
+          <View style={[styles.editModalHandle, { backgroundColor: colors.border }]} />
+
+          {/* Header */}
+          <View style={styles.editModalHeader}>
+            <TouchableOpacity onPress={() => setShowEditModal(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={[styles.editModalCancel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.editModalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Edit Profile</Text>
+            <TouchableOpacity onPress={handleSaveProfile} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={[styles.editModalSave, { color: colors.primary, fontFamily: "Inter_700Bold" }]}>Save</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 20, paddingBottom: 40 }}>
+            {/* Profile photo tap in modal too */}
+            <TouchableOpacity style={styles.editAvatarWrap} onPress={handlePickPhoto} activeOpacity={0.8}>
+              {userProfile.photoUri ? (
+                <Image source={{ uri: userProfile.photoUri }} style={styles.editAvatarPhoto} />
+              ) : (
+                <View style={[styles.editAvatarCircle, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.editAvatarLetter, { fontFamily: "Inter_700Bold" }]}>
+                    {(editName[0] ?? userProfile.name[0] ?? "?").toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.editAvatarCamBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Feather name="camera" size={14} color={colors.foreground} />
+              </View>
+              <Text style={[styles.editAvatarHint, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>
+                Tap to change photo
+              </Text>
+            </TouchableOpacity>
+
+            {/* Name field */}
+            <View style={styles.editField}>
+              <Text style={[styles.editFieldLabel, { color: colors.textSecondary, fontFamily: "Inter_600SemiBold" }]}>Name</Text>
+              <TextInput
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Your name"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.editFieldInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, fontFamily: "Inter_400Regular" }]}
+                maxLength={40}
+                returnKeyType="next"
+              />
+            </View>
+
+            {/* Bio field */}
+            <View style={styles.editField}>
+              <Text style={[styles.editFieldLabel, { color: colors.textSecondary, fontFamily: "Inter_600SemiBold" }]}>Bio</Text>
+              <TextInput
+                value={editBio}
+                onChangeText={setEditBio}
+                placeholder="Tell people about your cooking style…"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.editFieldInput, styles.editFieldTextArea, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground, fontFamily: "Inter_400Regular" }]}
+                maxLength={150}
+                multiline
+                numberOfLines={3}
+              />
+              <Text style={[styles.editFieldCounter, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>{editBio.length}/150</Text>
+            </View>
+
+            {/* Read-only info */}
+            <View style={[styles.editInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.editInfoRow}>
+                <Text style={[styles.editInfoLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Skill Level</Text>
+                <Text style={[styles.editInfoValue, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{userProfile.skillLevel}</Text>
+              </View>
+              <View style={[styles.editInfoDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.editInfoRow}>
+                <Text style={[styles.editInfoLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Goal</Text>
+                <Text style={[styles.editInfoValue, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{userProfile.goal}</Text>
+              </View>
+              <View style={[styles.editInfoDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.editInfoRow}>
+                <Text style={[styles.editInfoLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Diet</Text>
+                <Text style={[styles.editInfoValue, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{userProfile.dietType.join(", ")}</Text>
+              </View>
+              <View style={[styles.editInfoDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.editInfoRow}>
+                <Text style={[styles.editInfoLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>Household</Text>
+                <Text style={[styles.editInfoValue, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>{userProfile.householdSize} {userProfile.householdSize === 1 ? "person" : "people"}</Text>
+              </View>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -672,6 +858,7 @@ const styles = StyleSheet.create({
     borderTopColor: "transparent",
   },
   avatarInner: { width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#fff" },
+  avatarPhoto: { width: 82, height: 82, borderRadius: 41, borderWidth: 3, borderColor: "#fff" },
   avatarLetter: { color: "#fff", fontSize: 32 },
   streakBadge: {
     position: "absolute", bottom: -2, right: -2,
@@ -802,4 +989,35 @@ const styles = StyleSheet.create({
   badgeDesc: { fontSize: 11, textAlign: "center", lineHeight: 15 },
   earnedPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 100, borderWidth: 1, marginTop: 2 },
   earnedPillText: { fontSize: 10 },
+
+  // ── Edit Profile Modal ────────────────────────────────────────────────────────
+  editModal: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
+  editModalHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
+  editModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 28 },
+  editModalTitle: { fontSize: 17 },
+  editModalCancel: { fontSize: 15 },
+  editModalSave: { fontSize: 15 },
+
+  editAvatarWrap: { alignItems: "center", gap: 10, position: "relative" },
+  editAvatarPhoto: { width: 90, height: 90, borderRadius: 45 },
+  editAvatarCircle: { width: 90, height: 90, borderRadius: 45, alignItems: "center", justifyContent: "center" },
+  editAvatarLetter: { color: "#fff", fontSize: 36 },
+  editAvatarCamBadge: {
+    position: "absolute", bottom: 26, right: "33%",
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: "center", justifyContent: "center", borderWidth: 1.5,
+  },
+  editAvatarHint: { fontSize: 13 },
+
+  editField: { gap: 8 },
+  editFieldLabel: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 },
+  editFieldInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15 },
+  editFieldTextArea: { minHeight: 80, textAlignVertical: "top" },
+  editFieldCounter: { fontSize: 12, textAlign: "right" },
+
+  editInfoCard: { borderWidth: 1, borderRadius: 16, overflow: "hidden" },
+  editInfoRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
+  editInfoLabel: { fontSize: 14 },
+  editInfoValue: { fontSize: 14 },
+  editInfoDivider: { height: StyleSheet.hairlineWidth, marginHorizontal: 16 },
 });
