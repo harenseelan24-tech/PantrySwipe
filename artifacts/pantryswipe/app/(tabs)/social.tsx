@@ -381,8 +381,22 @@ export default function SocialScreen() {
             )}
           </View>
           {!isMe && !alreadyFollowing && !justFollowed && (
-            <TouchableOpacity style={[styles.followBtn, { borderColor: colors.primary }]} onPress={() => handleFollow(item.username)}>
-              <Text style={[styles.followBtnText, { color: colors.primary, fontFamily: "Inter_700Bold" }]}>Follow</Text>
+            <TouchableOpacity
+              style={[
+                styles.followBtn,
+                {
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.35,
+                  shadowRadius: 7,
+                  elevation: 3,
+                },
+              ]}
+              onPress={() => handleFollow(item.username)}
+            >
+              <Text style={[styles.followBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>+ Follow</Text>
             </TouchableOpacity>
           )}
           {!isMe && justFollowed && (
@@ -529,49 +543,65 @@ export default function SocialScreen() {
   // ── Trending header (top cuisines horizontal scroll) ─────────────────────
   const TrendingHeader = () => (
     <View style={{ marginBottom: 8 }}>
-      <Text style={[styles.sectionLabel, { color: colors.textSecondary, fontFamily: "Inter_700Bold" }]}>
-        Trending Cuisines
-      </Text>
+      {/* Eyebrow label */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: colors.primary }} />
+        <Text style={{ fontSize: 10, letterSpacing: 1.5, fontFamily: "Inter_600SemiBold", color: colors.primary, textTransform: "uppercase" }}>
+          Trending Cuisines
+        </Text>
+      </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.trendingCuisinesRow}>
         {trendingByCuisine.map((p, i) => {
           const imgSrc = getSocialImageSource(p.image, i, undefined);
           return (
-            <View key={p.id} style={[styles.trendingCuisineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View key={p.id} style={[styles.trendingCuisineCard, { backgroundColor: colors.card, borderColor: colors.border, overflow: "hidden" }]}>
               {imgSrc ? (
                 <Image source={imgSrc} style={styles.trendingCuisineImage} resizeMode="cover" />
               ) : (
-                <View style={[styles.trendingCuisineImage, { backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }]}>
-                  <Text style={{ fontSize: 24 }}>{CUISINE_EMOJIS[p.cuisine ?? ""] ?? "🍽"}</Text>
+                <View style={[styles.trendingCuisineImage, { backgroundColor: colors.primary + "12", alignItems: "center", justifyContent: "center" }]}>
+                  <View style={[styles.trendingEmojiBox, { backgroundColor: colors.primary + "20" }]}>
+                    <Text style={{ fontSize: 26 }}>{CUISINE_EMOJIS[p.cuisine ?? ""] ?? "🍽"}</Text>
+                  </View>
                 </View>
               )}
-              <View style={{ padding: 8 }}>
+              {/* Bottom gradient label */}
+              <View style={[styles.trendingCuisineLabel, { backgroundColor: colors.card }]}>
                 <Text style={[{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.foreground }]} numberOfLines={1}>
                   {p.cuisine ?? "Mixed"}
                 </Text>
-                <Text style={[{ fontSize: 10, color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
-                  🔥 {formatCount(p.likes)} likes
+                <Text style={[{ fontSize: 9, color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
+                  🔥 {formatCount(p.likes)}
                 </Text>
               </View>
             </View>
           );
         })}
       </ScrollView>
-      <View style={[{ height: 1, backgroundColor: colors.border, marginVertical: 8 }]} />
-      <Text style={[styles.sectionLabel, { color: colors.textSecondary, fontFamily: "Inter_700Bold", marginBottom: 4 }]}>
-        All Trending
-      </Text>
+      <View style={[{ height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: 10 }]} />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: colors.textMuted }} />
+        <Text style={{ fontSize: 10, letterSpacing: 1.5, fontFamily: "Inter_600SemiBold", color: colors.textMuted, textTransform: "uppercase" }}>
+          All Trending
+        </Text>
+      </View>
     </View>
   );
 
   // ── Near Me header ────────────────────────────────────────────────────────
   const NearMeHeader = () => (
-    <View style={[styles.nearMeHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Feather name="map-pin" size={14} color={colors.primary} />
-      <Text style={[{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
-        Showing results near you
-      </Text>
-      <View style={[styles.suburbPill, { backgroundColor: colors.primary + "20", borderColor: colors.primary + "40" }]}>
-        <Text style={[{ fontSize: 11, color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>{NEAR_ME_SUBURB}</Text>
+    <View style={[styles.nearMeHeader, { backgroundColor: "#4CAF760A", borderColor: "#4CAF7630", overflow: "hidden" }]}>
+      {/* Herb-green left accent bar */}
+      <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: "#4CAF76" }} />
+      <View style={{ marginLeft: 8, flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+        <View style={[{ width: 30, height: 30, borderRadius: 8, backgroundColor: "#4CAF7620", alignItems: "center", justifyContent: "center" }]}>
+          <Feather name="map-pin" size={14} color="#4CAF76" />
+        </View>
+        <Text style={[{ fontSize: 13, color: "#1a1a1a", fontFamily: "Inter_500Medium", flex: 1 }]}>
+          Showing results near you
+        </Text>
+        <View style={[styles.suburbPill, { backgroundColor: "#4CAF7620", borderColor: "#4CAF7650" }]}>
+          <Text style={[{ fontSize: 11, color: "#4CAF76", fontFamily: "Inter_600SemiBold" }]}>{NEAR_ME_SUBURB}</Text>
+        </View>
       </View>
     </View>
   );
@@ -592,13 +622,29 @@ export default function SocialScreen() {
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: topPadding + 6, borderBottomColor: colors.border }]}>
         <TouchableOpacity
-          style={[styles.iconBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
+          style={[
+            styles.iconBtn,
+            {
+              backgroundColor: colors.primary,
+              borderColor: colors.primary,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.45,
+              shadowRadius: 10,
+              elevation: 5,
+            },
+          ]}
           onPress={openCompose}
         >
           <Feather name="plus" size={20} color={colors.primaryForeground} />
         </TouchableOpacity>
 
-        <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Social</Text>
+        <View style={{ alignItems: "center", gap: 1 }}>
+          <Text style={{ fontSize: 9, letterSpacing: 1.5, fontFamily: "Inter_600SemiBold", color: colors.textMuted, textTransform: "uppercase" }}>
+            Food Community
+          </Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>Social</Text>
+        </View>
 
         <TouchableOpacity
           style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -637,9 +683,19 @@ export default function SocialScreen() {
             return (
               <TouchableOpacity
                 key={c}
-                style={[styles.cuisineFilter, active
-                  ? { backgroundColor: colors.primary }
-                  : { backgroundColor: colors.background, borderColor: colors.border },
+                style={[
+                  styles.cuisineFilter,
+                  active
+                    ? {
+                        backgroundColor: colors.primary,
+                        borderColor: colors.primary,
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0.4,
+                        shadowRadius: 7,
+                        elevation: 3,
+                      }
+                    : { backgroundColor: colors.background, borderColor: colors.border },
                 ]}
                 onPress={() => toggleCuisine(c)}
               >
@@ -1087,8 +1143,10 @@ const styles = StyleSheet.create({
   // Trending section
   sectionLabel: { fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase", paddingHorizontal: 0, marginBottom: 10 },
   trendingCuisinesRow: { gap: 10, paddingBottom: 4 },
-  trendingCuisineCard: { width: 100, borderRadius: 12, overflow: "hidden", borderWidth: 1 },
-  trendingCuisineImage: { width: "100%", height: 70 },
+  trendingCuisineCard: { width: 108, borderRadius: 14, overflow: "hidden", borderWidth: 1 },
+  trendingCuisineImage: { width: "100%", height: 76 },
+  trendingEmojiBox: { width: 48, height: 48, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  trendingCuisineLabel: { paddingHorizontal: 8, paddingVertical: 7, gap: 2 },
 
   // Near Me header
   nearMeHeader: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 12, borderWidth: 1, marginBottom: 12 },

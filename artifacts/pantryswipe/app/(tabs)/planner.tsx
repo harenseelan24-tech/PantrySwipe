@@ -25,6 +25,8 @@ const DAYS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satu
 const MEALS: MealType[] = ["Breakfast", "Lunch", "Dinner"];
 const MEAL_ICONS: Record<MealType, string> = { Breakfast: "sun", Lunch: "clock", Dinner: "moon" };
 const MEAL_EMOJI: Record<MealType, string> = { Breakfast: "🌅", Lunch: "☀️", Dinner: "🌙" };
+const MEAL_COLORS: Record<MealType, string> = { Breakfast: "#F97316", Lunch: "#F5A623", Dinner: "#8B5CF6" };
+const MEAL_BG: Record<MealType, string> = { Breakfast: "#FFF7ED", Lunch: "#FFFBEB", Dinner: "#F5F3FF" };
 
 const EMPTY_PLAN: MealPlan = {
   Mon: { Breakfast: null, Lunch: null, Dinner: null },
@@ -156,7 +158,17 @@ export default function PlannerScreen() {
           <Text style={[styles.headerSub, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{formatWeekRange(weekDates)}</Text>
         </View>
         <TouchableOpacity
-          style={[styles.generateBtn, { backgroundColor: generating ? colors.muted : colors.primary }]}
+          style={[
+            styles.generateBtn,
+            {
+              backgroundColor: generating ? colors.muted : colors.primary,
+              shadowColor: generating ? "transparent" : colors.primary,
+              shadowOffset: { width: 0, height: 3 },
+              shadowOpacity: generating ? 0 : 0.35,
+              shadowRadius: 8,
+              elevation: generating ? 0 : 4,
+            },
+          ]}
           onPress={handleAutoFill}
           disabled={generating}
         >
@@ -204,42 +216,53 @@ export default function PlannerScreen() {
 
         {/* Stats */}
         <View style={styles.summaryRow}>
-          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="zap" size={16} color={colors.primary} />
-            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
+          <View style={[styles.summaryCard, { backgroundColor: colors.primary + "0C", borderColor: colors.primary + "28" }]}>
+            <View style={[styles.summaryIconBox, { backgroundColor: colors.primary + "20" }]}>
+              <Feather name="zap" size={15} color={colors.primary} />
+            </View>
+            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_700Bold" }]}>
               {cookedKcalPerDay > 0 ? cookedKcalPerDay : "—"}
             </Text>
             <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>kcal/day</Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="check-circle" size={16} color={colors.saveBlue} />
-            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{totalCookedMeals}</Text>
+          <View style={[styles.summaryCard, { backgroundColor: colors.saveBlue + "0C", borderColor: colors.saveBlue + "28" }]}>
+            <View style={[styles.summaryIconBox, { backgroundColor: colors.saveBlue + "20" }]}>
+              <Feather name="check-circle" size={15} color={colors.saveBlue} />
+            </View>
+            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_700Bold" }]}>{totalCookedMeals}</Text>
             <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>meals cooked</Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="calendar" size={16} color={colors.herbGreen || "#4CAF76"} />
-            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{plannedCount}</Text>
+          <View style={[styles.summaryCard, { backgroundColor: "#4CAF7610", borderColor: "#4CAF7630" }]}>
+            <View style={[styles.summaryIconBox, { backgroundColor: "#4CAF7622" }]}>
+              <Feather name="calendar" size={15} color="#4CAF76" />
+            </View>
+            <Text style={[styles.summaryValue, { color: colors.foreground, fontFamily: "SpaceGrotesk_700Bold" }]}>{plannedCount}</Text>
             <Text style={[styles.summaryLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>this week</Text>
           </View>
         </View>
 
         {/* Budget awareness banner */}
         {userProfile.weeklyBudget > 0 && (
-          <View style={[styles.budgetBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="dollar-sign" size={14} color={colors.primary} />
-            <Text style={[styles.budgetBannerText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
-              Weekly grocery budget:{" "}
-              <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>
-                ${userProfile.weeklyBudget}
-              </Text>
-            </Text>
-            {userProfile.goal ? (
-              <View style={[styles.budgetGoalPill, { backgroundColor: colors.primary + "20" }]}>
-                <Text style={[{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 11 }]}>
-                  Goal: {userProfile.goal}
-                </Text>
+          <View style={[styles.budgetBanner, { backgroundColor: colors.card, borderColor: colors.border, overflow: "hidden" }]}>
+            <View style={[styles.budgetAccent, { backgroundColor: colors.primary }]} />
+            <View style={styles.budgetBody}>
+              <View style={[styles.budgetIconBox, { backgroundColor: colors.primary + "18" }]}>
+                <Feather name="dollar-sign" size={14} color={colors.primary} />
               </View>
-            ) : null}
+              <Text style={[styles.budgetBannerText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
+                Weekly budget:{" "}
+                <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>
+                  ${userProfile.weeklyBudget}
+                </Text>
+              </Text>
+              {userProfile.goal ? (
+                <View style={[styles.budgetGoalPill, { backgroundColor: colors.primary + "20" }]}>
+                  <Text style={[{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 11 }]}>
+                    {userProfile.goal}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
         )}
 
@@ -247,14 +270,28 @@ export default function PlannerScreen() {
         <View style={styles.mealTypeRow}>
           {MEALS.map((meal) => {
             const isActive = activeMealType === meal;
+            const mealColor = MEAL_COLORS[meal];
             return (
               <TouchableOpacity
                 key={meal}
-                style={[styles.mealTypePill, { backgroundColor: isActive ? colors.primary : colors.card, borderColor: isActive ? colors.primary : colors.border }]}
+                style={[
+                  styles.mealTypePill,
+                  isActive
+                    ? {
+                        backgroundColor: mealColor,
+                        borderColor: mealColor,
+                        shadowColor: mealColor,
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0.45,
+                        shadowRadius: 8,
+                        elevation: 4,
+                      }
+                    : { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
                 onPress={() => { setActiveMealType(isActive ? null : meal); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
               >
                 <Text style={{ fontSize: 13 }}>{MEAL_EMOJI[meal]}</Text>
-                <Text style={[styles.mealTypePillText, { color: isActive ? colors.primaryForeground : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" }]}>{meal}</Text>
+                <Text style={[styles.mealTypePillText, { color: isActive ? "#fff" : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" }]}>{meal}</Text>
               </TouchableOpacity>
             );
           })}
@@ -267,26 +304,37 @@ export default function PlannerScreen() {
             {(activeMealType ? [activeMealType] : MEALS).map((meal) => {
               const recipeId = mealPlan[todayKey]?.[meal];
               const recipe = recipeId ? findRecipe(recipeId) : null;
+              const mealColor = MEAL_COLORS[meal];
               return (
-                <TouchableOpacity
-                  key={meal}
-                  style={[styles.dayMealRow, { backgroundColor: colors.card, borderColor: recipe ? colors.primary + "50" : colors.border }]}
-                  onPress={() => { if (recipe && recipeId) setSelectedMeal({ day: todayKey, meal, recipeId }); }}
-                >
-                  <View style={[styles.dayMealIcon, { backgroundColor: colors.primary + "15" }]}>
-                    <Text style={{ fontSize: 16 }}>{MEAL_EMOJI[meal]}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.dayMealType, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>{meal}</Text>
-                    {recipe ? (
-                      <Text style={[styles.dayMealName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>{recipe.title}</Text>
-                    ) : (
-                      <Text style={[styles.dayMealEmpty, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Cook a meal to fill this slot</Text>
-                    )}
-                  </View>
-                  {recipe && <Text style={[styles.dayMealCals, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories} kcal</Text>}
-                  {recipe ? <Feather name="chevron-right" size={16} color={colors.textMuted} /> : <Feather name="plus-circle" size={18} color={colors.textMuted} />}
-                </TouchableOpacity>
+                <View key={meal} style={{ borderRadius: 16, overflow: "hidden" }}>
+                  {/* Left meal-type accent bar */}
+                  <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: mealColor, zIndex: 1 }} />
+                  <TouchableOpacity
+                    style={[
+                      styles.dayMealRow,
+                      {
+                        backgroundColor: recipe ? MEAL_BG[meal] : colors.card,
+                        borderColor: recipe ? mealColor + "50" : colors.border,
+                        paddingLeft: 18,
+                      },
+                    ]}
+                    onPress={() => { if (recipe && recipeId) setSelectedMeal({ day: todayKey, meal, recipeId }); }}
+                  >
+                    <View style={[styles.dayMealIcon, { backgroundColor: mealColor + "20" }]}>
+                      <Text style={{ fontSize: 16 }}>{MEAL_EMOJI[meal]}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.dayMealType, { color: mealColor, fontFamily: "Inter_600SemiBold" }]}>{meal}</Text>
+                      {recipe ? (
+                        <Text style={[styles.dayMealName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={1}>{recipe.title}</Text>
+                      ) : (
+                        <Text style={[styles.dayMealEmpty, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>Cook a meal to fill this slot</Text>
+                      )}
+                    </View>
+                    {recipe && <Text style={[styles.dayMealCals, { color: mealColor, fontFamily: "SpaceGrotesk_700Bold" }]}>{recipe.calories} kcal</Text>}
+                    {recipe ? <Feather name="chevron-right" size={16} color={colors.textMuted} /> : <Feather name="plus-circle" size={18} color={colors.textMuted} />}
+                  </TouchableOpacity>
+                </View>
               );
             })}
           </View>
@@ -329,18 +377,26 @@ export default function PlannerScreen() {
                       {(activeMealType ? [activeMealType] : MEALS).map((meal) => {
                         const recipeId = mealPlan[day]?.[meal];
                         const recipe = recipeId ? findRecipe(recipeId) : null;
+                        const mealColor = MEAL_COLORS[meal];
                         return (
                           <TouchableOpacity
                             key={meal}
-                            style={[styles.mealCell, { backgroundColor: recipe ? colors.primary + "12" : colors.card, borderColor: recipe ? colors.primary + "40" : colors.border }]}
+                            style={[
+                              styles.mealCell,
+                              recipe
+                                ? { backgroundColor: MEAL_BG[meal], borderColor: mealColor + "50", overflow: "hidden" }
+                                : { backgroundColor: colors.card, borderColor: colors.border },
+                            ]}
                             onPress={() => recipe && recipeId ? setSelectedMeal({ day, meal, recipeId }) : undefined}
                             onLongPress={() => recipe ? removeFromPlan(day, meal) : undefined}
                           >
                             {recipe ? (
                               <>
-                                <Text style={{ fontSize: 10 }}>{MEAL_EMOJI[meal]}</Text>
-                                <Text style={[styles.mealRecipeName, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
-                                <Text style={[styles.mealCalories, { color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{recipe.calories}</Text>
+                                {/* Meal-type color accent bar — the signature element */}
+                                <View style={[styles.mealCellAccent, { backgroundColor: mealColor }]} />
+                                <Text style={{ fontSize: 9, marginTop: 2 }}>{MEAL_EMOJI[meal]}</Text>
+                                <Text style={[styles.mealRecipeName, { color: "#1a1a1a", fontFamily: "Inter_600SemiBold" }]} numberOfLines={2}>{recipe.title}</Text>
+                                <Text style={[styles.mealCalories, { color: mealColor, fontFamily: "SpaceGrotesk_700Bold" }]}>{recipe.calories}</Text>
                               </>
                             ) : (
                               <Feather name="plus" size={14} color={colors.textMuted} />
@@ -390,21 +446,37 @@ export default function PlannerScreen() {
       <Modal visible={!!selectedMeal} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setSelectedMeal(null)}>
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          {selectedRecipe && (
+          {selectedRecipe && selectedMeal && (
             <>
-              <Text style={[styles.mealDetailMealType, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
-                {selectedMeal?.meal} · {selectedMeal?.day}
-              </Text>
+              {/* Meal-type accent bar */}
+              <View style={[styles.mealDetailAccentBar, { backgroundColor: MEAL_COLORS[selectedMeal.meal] }]} />
+              {/* Eyebrow + context */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <View style={[styles.mealDetailEyebrowDot, { backgroundColor: MEAL_COLORS[selectedMeal.meal] }]} />
+                <Text style={{ fontSize: 10, letterSpacing: 1, fontFamily: "Inter_600SemiBold", color: MEAL_COLORS[selectedMeal.meal] }}>
+                  MEAL PLAN
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
+                <View style={[styles.mealDetailMealBadge, { backgroundColor: MEAL_COLORS[selectedMeal.meal] + "18", borderColor: MEAL_COLORS[selectedMeal.meal] + "40" }]}>
+                  <Text style={{ fontSize: 14 }}>{MEAL_EMOJI[selectedMeal.meal]}</Text>
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: MEAL_COLORS[selectedMeal.meal] }}>{selectedMeal.meal}</Text>
+                </View>
+                <Text style={{ fontSize: 13, color: colors.textMuted, fontFamily: "Inter_400Regular" }}>·</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, fontFamily: "Inter_500Medium" }}>{selectedMeal.day}</Text>
+              </View>
               <Text style={[styles.mealDetailTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>{selectedRecipe.title}</Text>
               <View style={styles.mealDetailStats}>
                 {[
-                  { label: "Calories", value: `${selectedRecipe.calories}`, icon: "zap" },
-                  { label: "Prep", value: `${selectedRecipe.prepTime + selectedRecipe.cookTime}m`, icon: "clock" },
-                  { label: "Servings", value: `${selectedRecipe.servings}`, icon: "users" },
+                  { label: "Calories", value: `${selectedRecipe.calories}`, icon: "zap", color: colors.primary },
+                  { label: "Prep", value: `${selectedRecipe.prepTime + selectedRecipe.cookTime}m`, icon: "clock", color: colors.saveBlue },
+                  { label: "Servings", value: `${selectedRecipe.servings}`, icon: "users", color: "#4CAF76" },
                 ].map((s) => (
-                  <View key={s.label} style={[styles.mealDetailStat, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Feather name={s.icon as any} size={14} color={colors.primary} />
-                    <Text style={[styles.mealDetailStatVal, { color: colors.foreground, fontFamily: "SpaceGrotesk_600SemiBold" }]}>{s.value}</Text>
+                  <View key={s.label} style={[styles.mealDetailStat, { backgroundColor: s.color + "0C", borderColor: s.color + "28" }]}>
+                    <View style={[styles.mealDetailStatIcon, { backgroundColor: s.color + "20" }]}>
+                      <Feather name={s.icon as any} size={13} color={s.color} />
+                    </View>
+                    <Text style={[styles.mealDetailStatVal, { color: colors.foreground, fontFamily: "SpaceGrotesk_700Bold" }]}>{s.value}</Text>
                     <Text style={[styles.mealDetailStatLabel, { color: colors.textSecondary, fontFamily: "Inter_400Regular" }]}>{s.label}</Text>
                   </View>
                 ))}
@@ -414,9 +486,9 @@ export default function PlannerScreen() {
                   <Feather name="trash-2" size={16} color={colors.destructive} />
                   <Text style={[styles.mealDetailBtnText, { color: colors.destructive, fontFamily: "Inter_600SemiBold" }]}>Remove</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.mealDetailBtn, { backgroundColor: colors.primary }]} onPress={() => { setSelectedMeal(null); router.push(`/recipe/${selectedRecipe.id}`); }}>
-                  <Feather name="book-open" size={16} color={colors.primaryForeground} />
-                  <Text style={[styles.mealDetailBtnText, { color: colors.primaryForeground, fontFamily: "Inter_700Bold" }]}>View Recipe</Text>
+                <TouchableOpacity style={[styles.mealDetailBtn, { backgroundColor: MEAL_COLORS[selectedMeal.meal] }]} onPress={() => { setSelectedMeal(null); router.push(`/recipe/${selectedRecipe.id}`); }}>
+                  <Feather name="book-open" size={16} color="#fff" />
+                  <Text style={[styles.mealDetailBtnText, { color: "#fff", fontFamily: "Inter_700Bold" }]}>View Recipe</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -444,10 +516,14 @@ const styles = StyleSheet.create({
   navBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   weekLabel: { fontSize: 14 },
   summaryRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
-  summaryCard: { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 14, borderWidth: 1, gap: 3 },
-  summaryValue: { fontSize: 18 },
+  summaryCard: { flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1, gap: 4 },
+  summaryIconBox: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  summaryValue: { fontSize: 22 },
   summaryLabel: { fontSize: 10, textAlign: "center" },
-  budgetBanner: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14, flexWrap: "wrap" },
+  budgetBanner: { flexDirection: "row", borderRadius: 12, borderWidth: 1, marginBottom: 14, overflow: "hidden" },
+  budgetAccent: { width: 4 },
+  budgetBody: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  budgetIconBox: { width: 30, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   budgetBannerText: { flex: 1, fontSize: 13 },
   budgetGoalPill: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 100 },
   mealTypeRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
@@ -467,6 +543,7 @@ const styles = StyleSheet.create({
   dayLabel: { fontSize: 10, textTransform: "uppercase" },
   dayDate: { fontSize: 13, marginTop: 1 },
   mealCell: { height: 72, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 4, gap: 2 },
+  mealCellAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
   mealRecipeName: { fontSize: 8, textAlign: "center", lineHeight: 11 },
   mealCalories: { fontSize: 8, textAlign: "center" },
   gridHint: { fontSize: 11, textAlign: "center", marginBottom: 16 },
@@ -490,10 +567,14 @@ const styles = StyleSheet.create({
 
   modal: { flex: 1, padding: 24 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 20 },
+  mealDetailAccentBar: { height: 4, borderRadius: 2, width: 48, marginBottom: 16 },
+  mealDetailEyebrowDot: { width: 6, height: 6, borderRadius: 3 },
+  mealDetailMealBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 100, borderWidth: 1 },
   mealDetailMealType: { fontSize: 13, marginBottom: 4 },
   mealDetailTitle: { fontSize: 26, letterSpacing: -0.4, marginBottom: 18 },
   mealDetailStats: { flexDirection: "row", gap: 10, marginBottom: 24 },
   mealDetailStat: { flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1, gap: 4 },
+  mealDetailStatIcon: { width: 32, height: 32, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   mealDetailStatVal: { fontSize: 17 },
   mealDetailStatLabel: { fontSize: 11 },
   mealDetailBtns: { flexDirection: "row", gap: 12 },

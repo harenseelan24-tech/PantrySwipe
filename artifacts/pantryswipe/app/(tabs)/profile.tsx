@@ -344,23 +344,36 @@ export default function ProfileScreen() {
           {activeTab === "Recipes" && (
             <View style={{ gap: 16 }}>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subtabRow}>
-                {RECIPE_SUBTABS.map((sub) => (
-                  <TouchableOpacity
-                    key={sub}
-                    style={[styles.subtab, {
-                      backgroundColor: recipeSubtab === sub ? colors.primary : "transparent",
-                      borderColor: recipeSubtab === sub ? colors.primary : colors.border,
-                    }]}
-                    onPress={() => setRecipeSubtab(sub)}
-                  >
-                    <Text style={[styles.subtabText, {
-                      color: recipeSubtab === sub ? colors.primaryForeground : colors.textSecondary,
-                      fontFamily: recipeSubtab === sub ? "Inter_700Bold" : "Inter_500Medium",
-                    }]}>
-                      {sub}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {RECIPE_SUBTABS.map((sub) => {
+                  const isActive = recipeSubtab === sub;
+                  return (
+                    <TouchableOpacity
+                      key={sub}
+                      style={[
+                        styles.subtab,
+                        isActive
+                          ? {
+                              backgroundColor: colors.primary,
+                              borderColor: colors.primary,
+                              shadowColor: colors.primary,
+                              shadowOffset: { width: 0, height: 0 },
+                              shadowOpacity: 0.4,
+                              shadowRadius: 8,
+                              elevation: 4,
+                            }
+                          : { backgroundColor: "transparent", borderColor: colors.border },
+                      ]}
+                      onPress={() => setRecipeSubtab(sub)}
+                    >
+                      <Text style={[styles.subtabText, {
+                        color: isActive ? colors.primaryForeground : colors.textSecondary,
+                        fontFamily: isActive ? "Inter_700Bold" : "Inter_500Medium",
+                      }]}>
+                        {sub}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
 
               {recipesList.length === 0 ? (
@@ -423,9 +436,12 @@ export default function ProfileScreen() {
           {/* SAVED TAB */}
           {activeTab === "Saved" && (
             <View style={{ gap: 14 }}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
-                {savedRecipesList.length > 0 ? `${savedRecipesList.length} recipes bookmarked` : "Your cookbook"}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: colors.saveBlue }} />
+                <Text style={{ fontSize: 10, letterSpacing: 1.5, fontFamily: "Inter_600SemiBold", color: colors.saveBlue, textTransform: "uppercase" }}>
+                  {savedRecipesList.length > 0 ? `${savedRecipesList.length} Bookmarked` : "Your Cookbook"}
+                </Text>
+              </View>
               {savedRecipesList.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Text style={{ fontSize: 40 }}>🔖</Text>
@@ -473,7 +489,9 @@ export default function ProfileScreen() {
           {activeTab === "Stats" && (
             <View style={{ gap: 14 }}>
               {/* Streak hero card */}
-              <View style={[styles.streakHero, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30" }]}>
+              <View style={[styles.streakHero, { backgroundColor: colors.primary + "12", borderColor: colors.primary + "30", overflow: "hidden" }]}>
+                {/* Saffron top accent bar */}
+                <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, backgroundColor: colors.primary }} />
                 <View style={styles.streakLeft}>
                   <View style={[styles.streakEmojiBox, { backgroundColor: colors.primary + "20" }]}>
                     <Text style={styles.streakEmojiText}>🔥</Text>
@@ -523,8 +541,15 @@ export default function ProfileScreen() {
               })()}
 
               {/* Top cuisines */}
-              <View style={[styles.cuisineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.cuisineCardTitle, { color: colors.foreground, fontFamily: "SpaceGrotesk_700Bold" }]}>Top Cuisines</Text>
+              <View style={[styles.cuisineCard, { backgroundColor: colors.card, borderColor: colors.border, overflow: "hidden" }]}>
+                {/* Saffron top accent bar */}
+                <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, backgroundColor: colors.primary }} />
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 2 }}>
+                  <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: colors.primary }} />
+                  <Text style={{ fontSize: 10, letterSpacing: 1.5, fontFamily: "Inter_600SemiBold", color: colors.primary, textTransform: "uppercase" }}>
+                    Top Cuisines
+                  </Text>
+                </View>
                 {ALL_CUISINES.map((c, i) => (
                   <View key={c.name} style={styles.cuisineRow}>
                     <Text style={[styles.cuisineRank, { color: colors.textMuted, fontFamily: "SpaceGrotesk_600SemiBold" }]}>
@@ -545,9 +570,12 @@ export default function ProfileScreen() {
           {/* BADGES TAB */}
           {activeTab === "Badges" && (
             <View style={{ gap: 10 }}>
-              <Text style={[styles.sectionLabel, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
-                {BADGES.filter((b) => b.earned).length} of {BADGES.length} earned
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: colors.primary }} />
+                <Text style={{ fontSize: 10, letterSpacing: 1.5, fontFamily: "Inter_600SemiBold", color: colors.primary, textTransform: "uppercase" }}>
+                  {BADGES.filter((b) => b.earned).length} of {BADGES.length} Earned
+                </Text>
+              </View>
               <View style={styles.badgesGrid}>
                 {Array.from({ length: Math.ceil(BADGES.length / 2) }, (_, ri) => (
                   <View key={ri} style={{ flexDirection: "row", gap: 10 }}>
