@@ -584,6 +584,10 @@ export default function RecipeDetailScreen() {
   // ── Cook Mode ────────────────────────────────────────────────────────────────
   if (cookMode) {
     const currentStep = displaySteps[cookModeStep];
+    if (!currentStep) {
+      setCookMode(false);
+      return null;
+    }
     const isLast = cookModeStep === displaySteps.length - 1;
     const isTimerActiveForStep = timerRunning && timerLabel === `Step ${currentStep.step}`;
 

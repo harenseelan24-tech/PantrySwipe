@@ -43,6 +43,8 @@ function RootLayoutNav() {
       <Stack.Screen name="privacy-policy" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="terms-of-service" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="paywall" options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="sign-in" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="cuisine/[name]" options={{ headerShown: false, animation: "slide_from_right" }} />
     </Stack>
   );
 }
