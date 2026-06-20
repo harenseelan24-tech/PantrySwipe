@@ -428,11 +428,13 @@ export default function HomeScreen() {
         onPress={() => { setSearchQuery(""); setSearchVisible(true); }}
         activeOpacity={0.8}
       >
-        <Feather name="search" size={16} color={colors.textMuted} />
+        <Feather name="search" size={15} color={colors.textMuted} />
         <Text style={[styles.searchPlaceholder, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
           Search recipes, ingredients, cuisine…
         </Text>
-        <Feather name="sliders" size={16} color={colors.primary} />
+        <View style={[styles.searchFilterBadge, { backgroundColor: colors.primary + "18", borderColor: colors.primary + "35" }]}>
+          <Feather name="sliders" size={13} color={colors.primary} />
+        </View>
       </TouchableOpacity>
 
       {/* ── OCCASION CHIPS ── */}
@@ -450,7 +452,15 @@ export default function HomeScreen() {
               style={[
                 styles.moodChip,
                 isActive
-                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ? {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                      shadowColor: colors.primary,
+                      shadowOffset: { width: 0, height: 3 },
+                      shadowOpacity: 0.45,
+                      shadowRadius: 8,
+                      elevation: 5,
+                    }
                   : { backgroundColor: colors.card, borderColor: colors.border },
               ]}
               onPress={() => {
@@ -462,7 +472,7 @@ export default function HomeScreen() {
               <Text
                 style={[
                   styles.moodChipText,
-                  { color: isActive ? "#fff" : colors.textSecondary, fontFamily: "Inter_500Medium" },
+                  { color: isActive ? "#fff" : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" },
                 ]}
               >
                 {mood.label}
@@ -472,19 +482,18 @@ export default function HomeScreen() {
         })}
       </ScrollView>
 
-      {/* ── MEAL TYPE FILTER ── */}
-      <View style={styles.mealTypeStrip}>
-        {(["🌅 Breakfast", "☀️ Lunch", "🌙 Dinner"] as const).map((label) => {
+      {/* ── MEAL TYPE FILTER — segmented control ── */}
+      <View style={[styles.mealTypeSegment, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {(["🌅 Breakfast", "☀️ Lunch", "🌙 Dinner"] as const).map((label, idx) => {
           const type = label.split(" ")[1] as "Breakfast" | "Lunch" | "Dinner";
           const isActive = activeMealType === type;
           return (
             <TouchableOpacity
               key={type}
               style={[
-                styles.mealTypePill,
-                isActive
-                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                  : { backgroundColor: colors.card, borderColor: colors.border },
+                styles.mealTypeTab,
+                isActive && { backgroundColor: colors.primary },
+                idx > 0 && { borderLeftWidth: 1, borderLeftColor: isActive ? colors.primary : colors.border },
               ]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -502,8 +511,8 @@ export default function HomeScreen() {
                 setCurrentIndex(0);
               }}
             >
-              <Text style={styles.mealTypePillEmoji}>{label.split(" ")[0]}</Text>
-              <Text style={[styles.mealTypePillText, { color: isActive ? "#fff" : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_500Medium" }]}>
+              <Text style={[styles.mealTypeTabEmoji, { opacity: isActive ? 1 : 0.7 }]}>{label.split(" ")[0]}</Text>
+              <Text style={[styles.mealTypeTabText, { color: isActive ? "#fff" : colors.textSecondary, fontFamily: isActive ? "Inter_600SemiBold" : "Inter_400Regular" }]}>
                 {type}
               </Text>
             </TouchableOpacity>
@@ -553,11 +562,23 @@ export default function HomeScreen() {
         </TouchableOpacity>
       ) : !activeIngredient && hasBanner ? (
         <View style={[styles.matchBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.matchDot, { backgroundColor: colors.primary }]} />
-          <Text style={[styles.matchBannerText, { color: colors.textSecondary, fontFamily: "Inter_500Medium" }]}>
-            <Text style={{ color: colors.primary, fontFamily: "SpaceGrotesk_600SemiBold" }}>{displayMatchCount}</Text>{" "}
-            recipes match your pantry right now
-          </Text>
+          <View style={[styles.matchBannerAccent, { backgroundColor: colors.primary }]} />
+          <View style={styles.matchBannerBody}>
+            <Text style={[styles.matchBannerCount, { color: colors.primary, fontFamily: "SpaceGrotesk_700Bold" }]}>
+              {displayMatchCount}
+            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.matchBannerLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                recipes you can cook right now
+              </Text>
+              <Text style={[styles.matchBannerSub, { color: colors.textMuted, fontFamily: "Inter_400Regular" }]}>
+                based on what's in your pantry
+              </Text>
+            </View>
+            <View style={[styles.matchBannerBadge, { backgroundColor: colors.primary + "18" }]}>
+              <Text style={{ fontSize: 16 }}>🥘</Text>
+            </View>
+          </View>
         </View>
       ) : null}
 
@@ -985,10 +1006,14 @@ const styles = StyleSheet.create({
   // ── Search ──
   searchBar: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    marginHorizontal: 16, paddingHorizontal: 14,
-    height: 46, borderRadius: 14, borderWidth: 1, marginBottom: 8,
+    marginHorizontal: 16, paddingHorizontal: 16,
+    height: 48, borderRadius: 100, borderWidth: 1, marginBottom: 8,
   },
   searchPlaceholder: { fontSize: 13, flex: 1 },
+  searchFilterBadge: {
+    width: 28, height: 28, borderRadius: 100, borderWidth: 1,
+    alignItems: "center", justifyContent: "center",
+  },
 
   // ── Mood chips ──
   moodScrollView: { height: 48, flexGrow: 0, flexShrink: 0 },
@@ -999,14 +1024,17 @@ const styles = StyleSheet.create({
   },
   moodChipText: { fontSize: 13 },
 
-  // ── Meal type filter ──
-  mealTypeStrip: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginBottom: 6 },
-  mealTypePill: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 5, paddingVertical: 9, borderRadius: 12, borderWidth: 1,
+  // ── Meal type — segmented control ──
+  mealTypeSegment: {
+    flexDirection: "row", marginHorizontal: 16, marginBottom: 6,
+    borderRadius: 14, borderWidth: 1, overflow: "hidden",
   },
-  mealTypePillEmoji: { fontSize: 13 },
-  mealTypePillText: { fontSize: 12 },
+  mealTypeTab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 10,
+  },
+  mealTypeTabEmoji: { fontSize: 14 },
+  mealTypeTabText: { fontSize: 12 },
 
   // ── Servings modal ──
   servingsOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
@@ -1082,14 +1110,23 @@ const styles = StyleSheet.create({
   },
   expiryMatchText: { fontSize: 12 },
 
-  // ── Pantry match banner ──
+  // ── Pantry match banner — bold stat card ──
   matchBanner: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    marginHorizontal: 16, paddingHorizontal: 14, paddingVertical: 9,
-    borderRadius: 12, borderWidth: 1, marginBottom: 8,
+    marginHorizontal: 16, marginBottom: 8,
+    borderRadius: 14, borderWidth: 1, overflow: "hidden",
   },
-  matchDot: { width: 7, height: 7, borderRadius: 3.5 },
-  matchBannerText: { flex: 1, fontSize: 13 },
+  matchBannerAccent: { height: 3, width: "100%" },
+  matchBannerBody: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    paddingHorizontal: 16, paddingVertical: 13,
+  },
+  matchBannerCount: { fontSize: 36, lineHeight: 40, letterSpacing: -1 },
+  matchBannerLabel: { fontSize: 13, marginBottom: 2 },
+  matchBannerSub: { fontSize: 11 },
+  matchBannerBadge: {
+    width: 40, height: 40, borderRadius: 12,
+    alignItems: "center", justifyContent: "center",
+  },
 
   // ── Deck ──
   deckWrapper: { alignItems: "center", position: "relative", flex: 1 },
