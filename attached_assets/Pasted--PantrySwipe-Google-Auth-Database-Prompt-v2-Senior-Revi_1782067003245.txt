@@ -1,0 +1,1112 @@
+# PantrySwipe — Google Auth + Database Prompt (v2 — Senior Reviewed)
+> Paste this entire prompt into Replit AI Agent. Self-contained. Execute every section in order.
+
+---
+
+## ⚠️ RISK REGISTER — READ BEFORE STARTING
+
+| Rank | Area | Risk | Fixed in |
+|------|------|------|----------|
+| 1 | PKCE OAuth token exchange | Supabase v2 uses PKCE by default — `parseRedirectParams` won't find a token | Section 8.1 |
+| 2 | `getSessionFromUrl` API misuse | `as never` cast hides that this method is web-only — deep link never completes | Section 13 |
+| 3 | `getSession` + `onAuthStateChange` race | Both fire on startup → double `fetchProfile` → race condition on profile state | Section 6.2 |
+| 4 | `completeOnboarding` discards edited name | User edits name in Step 1 but AppContext re-reads original Google name | Sections 6.2, 9.4 |
+| 5 | Pantry item IDs are array indices | Every user's first item is `"0"` — guaranteed collisions on delete/lookup | Section 9.4 |
+| 6 | `updateProfile` silently corrupts state on error | Optimistic update already applied when DB write fails — no recovery | Section 6.2 |
+| 7 | `fetchProfile` hoisting bug | `const fetchProfile` defined after `useEffect` that calls it — temporal dead zone | Section 6.2 |
+| 8 | Profile photo `onError` fallback never renders | Condition checks `avatarUrl` string (still truthy), not `avatarError` state | Section 10.1 |
+| 9 | Wrong Expo Go redirect URI | `exp://localhost:8081` only works on emulator — fails on physical device | Section 2.4 |
+| 10 | Unused `EXPO_PUBLIC_GOOGLE_CLIENT_ID` env var | Added to secrets/env but never read by any code — confuses setup | Sections 2.5, 3 |
+| 11 | `signOut` does redundant state clears | `onAuthStateChange` already clears state; manual clears cause double re-renders | Section 6.2 |
+| 12 | AsyncStorage migration has no verification step | Stale writes survive silently → split-brain between AsyncStorage and Supabase | Section 11 |
+| 13 | `express.json()` middleware not confirmed | `req.headers.authorization` and `req.body` may be undefined without it | Section 12 |
+| 14 | Laggy `updateProfile` UX | Optimistic update happens AFTER network round-trip, not before | Section 6.2 |
+| 15 | `upsert` in `completeOnboarding` not explained | Agent may switch to plain `insert` which fails if row already exists | Section 6.2 |
+
+---
+
+## ROLE & GOAL
+
+You are a senior full-stack engineer working on **PantrySwipe** — an Expo SDK 54 / expo-router v6 mobile app with an Express API server, all in the same Replit monorepo.
+
+Your job is to add:
+1. Google Sign-In (primary) + Email/Password (fallback) authentication via Supabase Auth
+2. A Supabase Postgres database to store user profiles (source of truth, replacing AsyncStorage for profile data)
+3. Automatic session persistence — users stay logged in across app restarts until they explicitly sign out
+4. Post-sign-up onboarding for new users only (dietary preferences + first pantry items)
+5. Google profile photo displayed on the in-app profile screen
+
+Execute every section in order. After each section, confirm what was changed and why before moving on.
+
+---
+
+## SECTION 1 — ARCHITECTURE & ORIENTATION
+
+### Why Supabase
+- Built-in Auth (Google OAuth + email/password), token refresh, and session management
+- `@supabase/supabase-js` works identically in Expo and Node.js — one library for both sides of the monorepo
+- Hosted Postgres with Row Level Security
+- Free-tier sufficient for this stage
+
+### What changes vs what stays
+
+**Changes:**
+- `app/index.tsx` — auth-aware routing replaces the AsyncStorage flag check
+- `app/welcome.tsx` — gains Google Sign-In + email/password form
+- `app/onboarding.tsx` — triggered only after auth, for new users only
+- `context/AppContext.tsx` — gains session, profile, and auth actions
+- `artifacts/api-server/` — gains Supabase client for token verification
+
+**Stays the same (do not touch):**
+- All tab screens, swipe cards, cook mode, AI Chef, party planner
+- `app/(tabs)/_layout.tsx` — contains iOS 26 NativeTabs logic, must be preserved
+
+### Auth flow — NEW user:
+```
+App open → index.tsx: no session → /welcome
+→ Google Sign-In → Supabase PKCE exchange → session created
+→ onAuthStateChange fires → fetchProfile → null (no row yet)
+→ index.tsx: authUser set, profile null → /onboarding
+→ User completes onboarding → completeOnboarding() upserts profile row
+→ profile.onboardingComplete = true → router.replace('/(tabs)')
+```
+
+### Auth flow — RETURNING user:
+```
+App open → index.tsx: valid persisted session found
+→ fetchProfile → profile row found → router.replace('/(tabs)')
+→ Session auto-refreshes in background — user never re-authenticates
+```
+
+### Auth flow — SIGN OUT:
+```
+Profile tab → Sign Out confirmed → supabase.auth.signOut()
+→ onAuthStateChange fires with null session
+→ AppContext clears profile → index.tsx detects no authUser → /welcome
+```
+
+---
+
+## SECTION 2 — SUPABASE PROJECT SETUP (HUMAN STEP — AGENT PAUSES HERE)
+
+**The agent must stop and display the following instructions, then wait for the developer to confirm completion before proceeding.**
+
+### 2.1 — Create Supabase project
+
+1. Go to https://supabase.com → sign in → "New Project" → name it `pantryswipe`.
+2. Save the database password somewhere safe.
+3. Wait for provisioning (~1 min).
+4. Go to **Project Settings → API**. Copy:
+   - **Project URL**: `https://xxxxxxxxxxxx.supabase.co`
+   - **anon/public key**: long JWT string
+
+### 2.2 — Create the profiles table
+
+In Supabase dashboard → **SQL Editor**, run this exactly:
+
+```sql
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  display_name TEXT,
+  avatar_url TEXT,
+  dietary_preferences TEXT[] DEFAULT '{}',
+  pantry_items JSONB DEFAULT '[]',
+  cooked_recipe_ids TEXT[] DEFAULT '{}',
+  saved_recipe_ids TEXT[] DEFAULT '{}',
+  xp INTEGER DEFAULT 0,
+  streak INTEGER DEFAULT 0,
+  last_cooked_date TEXT,
+  recipes_swiped_count INTEGER DEFAULT 0,
+  party_plans_created INTEGER DEFAULT 0,
+  total_likes_given INTEGER DEFAULT 0,
+  onboarding_complete BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER profiles_updated_at
+  BEFORE UPDATE ON profiles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+```
+
+### 2.3 — Enable Row Level Security (CRITICAL — never skip)
+
+```sql
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read own profile"
+  ON profiles FOR SELECT
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile"
+  ON profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+```
+
+Without RLS any authenticated user can read every other user's data. This is non-negotiable.
+
+### 2.4 — Enable Google OAuth in Supabase
+
+⚠️ **Redirect URI strategy — read carefully. The Expo Go `exp://` URI approach is NOT used here because it only works on emulators, not physical devices.** Instead, all OAuth redirects go through Supabase's own callback URL, and Supabase then deep-links back to the app via the custom scheme. This works in both Expo Go and production builds.
+
+1. Go to https://console.cloud.google.com → APIs & Services → Credentials → Create → OAuth 2.0 Client ID.
+2. Application type: **Web application**.
+3. Authorized redirect URIs — add ONLY:
+   - `https://xxxxxxxxxxxx.supabase.co/auth/v1/callback`  ← your Supabase project URL + `/auth/v1/callback`
+4. Copy the **Client ID** and **Client Secret**.
+5. In Supabase dashboard → **Authentication → Providers → Google** → toggle ON → paste Client ID and Client Secret → Save.
+
+### 2.5 — Add Replit Secrets
+
+In Replit → Secrets tab (lock icon), add:
+```
+SUPABASE_URL       = https://xxxxxxxxxxxx.supabase.co
+SUPABASE_ANON_KEY  = your-anon-public-key
+```
+
+Add to `artifacts/pantryswipe/.env` (for Expo — baked at bundle time):
+```
+EXPO_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key
+```
+
+Verify `artifacts/pantryswipe/.env` is in `.gitignore`. Add it if not.
+
+⚠️ After editing `.env`, you MUST restart Metro — `EXPO_PUBLIC_` vars are compile-time constants, not runtime reads.
+
+Note: No `GOOGLE_CLIENT_ID` env var is needed in the Expo app. Google credentials live in Supabase only. The Expo app only needs the Supabase URL and anon key.
+
+**Agent: wait for developer to confirm Section 2 is complete before proceeding.**
+
+---
+
+## SECTION 3 — INSTALL DEPENDENCIES
+
+### 3.1 — Expo app
+
+Run from `artifacts/pantryswipe/`:
+```bash
+pnpm add @supabase/supabase-js expo-web-browser expo-linking
+pnpm add @react-native-async-storage/async-storage  # skip if already installed
+```
+
+**Why each:**
+- `@supabase/supabase-js` — auth + database client
+- `expo-web-browser` — opens Google sign-in browser and handles the redirect back
+- `expo-linking` — handles deep link callbacks for the PKCE exchange
+- `@react-native-async-storage/async-storage` — Supabase uses this internally to persist the session
+
+**Do NOT install `expo-auth-session` or `expo-crypto`** — the PKCE flow is handled entirely by Supabase + `expo-web-browser`. Adding these packages would introduce the wrong token-exchange pattern that breaks with Supabase v2.
+
+After installing, verify `artifacts/pantryswipe/app.json` has `"scheme": "pantryswipe"`:
+```json
+{ "expo": { "scheme": "pantryswipe" } }
+```
+If missing, add it. This custom scheme is what Supabase uses to redirect back into the app after Google sign-in.
+
+### 3.2 — API server
+
+Run from `artifacts/api-server/`:
+```bash
+pnpm add @supabase/supabase-js
+```
+
+---
+
+## SECTION 4 — SUPABASE CLIENT UTILITY
+
+Create `artifacts/pantryswipe/lib/supabase.ts`:
+
+```typescript
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error(
+    'Missing Supabase env vars. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY ' +
+    'in artifacts/pantryswipe/.env, then restart Metro.'
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,      // persists session token across app restarts
+    autoRefreshToken: true,     // silently refreshes before expiry
+    persistSession: true,       // key setting for auto-login
+    detectSessionInUrl: false,  // disable web URL detection — not a web app
+  },
+});
+```
+
+This is the only place the Supabase client is created in the Expo app. Import from here everywhere — never instantiate a second client.
+
+---
+
+## SECTION 5 — PROFILE TYPE DEFINITION
+
+Create `artifacts/pantryswipe/types/profile.ts`:
+
+```typescript
+export interface UserProfile {
+  id: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  dietaryPreferences: string[];
+  pantryItems: PantryItem[];
+  cookedRecipeIds: string[];
+  savedRecipeIds: string[];
+  xp: number;
+  streak: number;
+  lastCookedDate: string | null;    // 'YYYY-MM-DD' UTC
+  recipesSwipedCount: number;
+  partyPlansCreated: number;
+  totalLikesGiven: number;
+  onboardingComplete: boolean;
+}
+
+export interface PantryItem {
+  id: string;    // UUID — generated with crypto.randomUUID() or Date.now() + Math.random()
+  name: string;
+  category?: string;
+  expiresAt?: string;
+}
+
+// Maps Supabase snake_case DB row → camelCase app type
+// Uses explicit field access (not generic Record) so TypeScript catches schema drift
+export function mapProfileFromDB(row: {
+  id: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  dietary_preferences: string[] | null;
+  pantry_items: PantryItem[] | null;
+  cooked_recipe_ids: string[] | null;
+  saved_recipe_ids: string[] | null;
+  xp: number | null;
+  streak: number | null;
+  last_cooked_date: string | null;
+  recipes_swiped_count: number | null;
+  party_plans_created: number | null;
+  total_likes_given: number | null;
+  onboarding_complete: boolean | null;
+}): UserProfile {
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    avatarUrl: row.avatar_url,
+    dietaryPreferences: row.dietary_preferences ?? [],
+    pantryItems: row.pantry_items ?? [],
+    cookedRecipeIds: row.cooked_recipe_ids ?? [],
+    savedRecipeIds: row.saved_recipe_ids ?? [],
+    xp: row.xp ?? 0,
+    streak: row.streak ?? 0,
+    lastCookedDate: row.last_cooked_date,
+    recipesSwipedCount: row.recipes_swiped_count ?? 0,
+    partyPlansCreated: row.party_plans_created ?? 0,
+    totalLikesGiven: row.total_likes_given ?? 0,
+    onboardingComplete: row.onboarding_complete ?? false,
+  };
+}
+```
+
+---
+
+## SECTION 6 — UPDATE AppContext FOR AUTH
+
+Open `artifacts/pantryswipe/context/AppContext.tsx`. Add auth state and actions without removing any existing context values.
+
+### 6.1 — Add to AppContextType interface
+
+```typescript
+import { Session, User } from '@supabase/supabase-js';
+import { UserProfile, PantryItem } from '../types/profile';
+
+// Add to existing AppContextType:
+interface AppContextType {
+  // ... existing fields unchanged ...
+
+  // Auth state
+  session: Session | null;
+  authUser: User | null;
+  profile: UserProfile | null;
+  isLoadingAuth: boolean;
+
+  // Auth actions
+  signOut: () => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  completeOnboarding: (prefs: {
+    displayName: string;                 // user's (possibly edited) name from Step 1
+    dietaryPreferences: string[];
+    pantryItems: PantryItem[];
+  }) => Promise<void>;
+}
+```
+
+### 6.2 — Auth implementation inside AppProvider
+
+⚠️ **Critical ordering rule: `fetchProfile` must be declared BEFORE the `useEffect` that calls it.** JavaScript `const` arrow functions are not hoisted — calling them before declaration is a runtime error.
+
+```typescript
+import { supabase } from '../lib/supabase';
+import { mapProfileFromDB, UserProfile, PantryItem } from '../types/profile';
+
+// --- State ---
+const [session, setSession] = useState<Session | null>(null);
+const [authUser, setAuthUser] = useState<User | null>(null);
+const [profile, setProfile] = useState<UserProfile | null>(null);
+const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+
+// --- fetchProfile: declared FIRST, before any useEffect that calls it ---
+const fetchProfile = useCallback(async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // Row not found = brand new user, profile not yet created
+        setProfile(null);
+      } else {
+        console.error('[AppContext] fetchProfile error:', error.message);
+        setProfile(null);
+      }
+    } else {
+      setProfile(mapProfileFromDB(data));
+    }
+  } finally {
+    setIsLoadingAuth(false);
+  }
+}, []); // no deps — supabase client is stable
+
+// --- Session init: runs once on mount ---
+// ⚠️ Only use onAuthStateChange — do NOT also call getSession() separately.
+// Supabase fires onAuthStateChange with the restored session on mount (INITIAL_SESSION event),
+// so getSession() is redundant and causes a double fetchProfile race condition.
+useEffect(() => {
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      setSession(session);
+      setAuthUser(session?.user ?? null);
+
+      if (session?.user) {
+        // SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION with valid session
+        await fetchProfile(session.user.id);
+      } else {
+        // SIGNED_OUT, INITIAL_SESSION with no session
+        setProfile(null);
+        setIsLoadingAuth(false);
+      }
+    }
+  );
+
+  return () => subscription.unsubscribe();
+}, [fetchProfile]);
+
+// --- signOut: let onAuthStateChange handle state clearing ---
+// Do NOT manually call setSession/setAuthUser/setProfile here.
+// onAuthStateChange fires with session=null after signOut(), which clears everything.
+const signOut = async () => {
+  await supabase.auth.signOut();
+  // onAuthStateChange (SIGNED_OUT event) handles the state reset
+};
+
+// --- updateProfile: optimistic update FIRST, then persist, roll back on error ---
+const updateProfile = async (updates: Partial<UserProfile>) => {
+  if (!authUser) return;
+  if (!profile) return;
+
+  // 1. Optimistic update — UI responds instantly without waiting for network
+  const previousProfile = profile;
+  setProfile(prev => prev ? { ...prev, ...updates } : prev);
+
+  // 2. Build snake_case DB payload
+  const dbUpdates: Record<string, unknown> = {};
+  if (updates.displayName !== undefined) dbUpdates.display_name = updates.displayName;
+  if (updates.avatarUrl !== undefined) dbUpdates.avatar_url = updates.avatarUrl;
+  if (updates.dietaryPreferences !== undefined) dbUpdates.dietary_preferences = updates.dietaryPreferences;
+  if (updates.pantryItems !== undefined) dbUpdates.pantry_items = updates.pantryItems;
+  if (updates.cookedRecipeIds !== undefined) dbUpdates.cooked_recipe_ids = updates.cookedRecipeIds;
+  if (updates.savedRecipeIds !== undefined) dbUpdates.saved_recipe_ids = updates.savedRecipeIds;
+  if (updates.xp !== undefined) dbUpdates.xp = updates.xp;
+  if (updates.streak !== undefined) dbUpdates.streak = updates.streak;
+  if (updates.lastCookedDate !== undefined) dbUpdates.last_cooked_date = updates.lastCookedDate;
+  if (updates.recipesSwipedCount !== undefined) dbUpdates.recipes_swiped_count = updates.recipesSwipedCount;
+  if (updates.partyPlansCreated !== undefined) dbUpdates.party_plans_created = updates.partyPlansCreated;
+  if (updates.totalLikesGiven !== undefined) dbUpdates.total_likes_given = updates.totalLikesGiven;
+  if (updates.onboardingComplete !== undefined) dbUpdates.onboarding_complete = updates.onboardingComplete;
+
+  // 3. Persist to Supabase
+  const { error } = await supabase
+    .from('profiles')
+    .update(dbUpdates)
+    .eq('id', authUser.id);
+
+  if (error) {
+    // 4. Roll back optimistic update — restore previous state
+    console.error('[AppContext] updateProfile failed, rolling back:', error.message);
+    setProfile(previousProfile);
+    // Surface error to caller so the UI can show a message
+    throw new Error('Failed to save changes. Please check your connection and try again.');
+  }
+};
+
+// --- completeOnboarding: creates the profile row for new users ---
+// Uses upsert (not insert) because:
+//   - insert fails if the row somehow already exists (e.g. user tapped twice before disabled state kicked in)
+//   - upsert = INSERT ... ON CONFLICT DO UPDATE, which is idempotent and safe
+// The edited displayName from onboarding Step 1 is passed as a parameter — NOT read from user_metadata.
+const completeOnboarding = async (prefs: {
+  displayName: string;
+  dietaryPreferences: string[];
+  pantryItems: PantryItem[];
+}) => {
+  if (!authUser) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({
+      id: authUser.id,
+      email: authUser.email ?? '',
+      display_name: prefs.displayName,                            // from user's Step 1 input
+      avatar_url: authUser.user_metadata?.avatar_url ?? null,    // from Google, null for email users
+      dietary_preferences: prefs.dietaryPreferences,
+      pantry_items: prefs.pantryItems,
+      onboarding_complete: true,
+    }, {
+      onConflict: 'id',   // explicit conflict target — safer than letting Supabase infer
+    });
+
+  if (error) {
+    console.error('[AppContext] completeOnboarding error:', error.message);
+    throw error;
+  }
+
+  // Fetch fresh profile from DB — do not optimistically set,
+  // because we want server-generated defaults (xp=0, streak=0, etc.) to load correctly
+  await fetchProfile(authUser.id);
+};
+```
+
+Expose all new values and functions in the context value object.
+
+---
+
+## SECTION 7 — UPDATE app/index.tsx (AUTH-AWARE ROUTING GATE)
+
+```typescript
+import { useEffect } from 'react';
+import { View, ActivityIndicator } from 'react-native';
+import { router, useRootNavigationState } from 'expo-router';
+import { useAppContext } from '../context/AppContext';
+
+export default function Index() {
+  const navState = useRootNavigationState();
+  const { isLoadingAuth, authUser, profile } = useAppContext();
+
+  useEffect(() => {
+    // Gate 1: navigator must be mounted
+    if (!navState?.key) return;
+    // Gate 2: Supabase session check must be complete
+    if (isLoadingAuth) return;
+
+    if (!authUser) {
+      router.replace('/welcome');
+      return;
+    }
+
+    if (!profile || !profile.onboardingComplete) {
+      // New user (no profile row) OR user who abandoned onboarding midway
+      router.replace('/onboarding');
+      return;
+    }
+
+    router.replace('/(tabs)');
+  }, [navState?.key, isLoadingAuth, authUser, profile]);
+
+  // Always render a spinner — never null — while the check is in progress
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAF8' }}>
+      <ActivityIndicator size="large" color="#F5A623" />
+    </View>
+  );
+}
+```
+
+---
+
+## SECTION 8 — UPDATE app/welcome.tsx (SIGN-IN SCREEN)
+
+### 8.1 — Google Sign-In (PKCE-correct implementation)
+
+⚠️ **Supabase Auth v2 uses PKCE by default.** This means after Google sign-in, Supabase sends a `?code=...` authorization code to the redirect URL — NOT a `#access_token=...` fragment. Do NOT use `AuthSession.parseRedirectParams` to extract tokens. Do NOT call `supabase.auth.setSession()` manually. Instead, use the pattern below where the deep link callback (Section 13) handles the PKCE code exchange automatically.
+
+```typescript
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { supabase } from '../lib/supabase';
+import { Alert, ActivityIndicator } from 'react-native';
+
+// Required: tells expo-web-browser to complete the session when the browser closes on Android
+WebBrowser.maybeCompleteAuthSession();
+
+const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+const handleGoogleSignIn = async () => {
+  setIsGoogleLoading(true);
+  try {
+    // Build the redirect URI using the custom scheme defined in app.json
+    // Supabase will redirect to: pantryswipe://auth/callback?code=...
+    const redirectUri = Linking.createURL('auth/callback');
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUri,
+        skipBrowserRedirect: true,   // we open the browser manually below
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',         // ensures Google returns a refresh token
+        },
+      },
+    });
+
+    if (error) throw error;
+    if (!data.url) throw new Error('No OAuth URL returned from Supabase');
+
+    // Open Google sign-in in the system browser
+    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
+
+    if (result.type === 'cancel') {
+      // User closed the browser without signing in — not an error
+      return;
+    }
+
+    if (result.type === 'success') {
+      // The PKCE code exchange is handled by the deep link handler in _layout.tsx (Section 13).
+      // onAuthStateChange in AppContext will fire once the exchange completes.
+      // No manual token extraction or setSession call needed here.
+    }
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Something went wrong.';
+    Alert.alert('Sign-in failed', message);
+  } finally {
+    setIsGoogleLoading(false);
+  }
+};
+```
+
+### 8.2 — Email/Password fallback
+
+```typescript
+const [email, setEmail] = useState('');
+const [password, setPassword] = useState('');
+const [showPassword, setShowPassword] = useState(false);
+const [isNewAccount, setIsNewAccount] = useState(false);
+const [isEmailLoading, setIsEmailLoading] = useState(false);
+
+const handleEmailAuth = async () => {
+  if (!email.trim() || !password.trim()) {
+    Alert.alert('Required', 'Please enter your email and password.');
+    return;
+  }
+  if (password.length < 6) {
+    Alert.alert('Password too short', 'Password must be at least 6 characters.');
+    return;
+  }
+
+  setIsEmailLoading(true);
+  try {
+    if (isNewAccount) {
+      const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+      if (error) throw error;
+      Alert.alert(
+        'Check your email',
+        `We sent a confirmation link to ${email.trim()}. Click it, then sign in here.`,
+      );
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) {
+        // Map Supabase error messages to user-friendly text
+        if (error.message.toLowerCase().includes('invalid login credentials')) {
+          throw new Error('Incorrect email or password. Please try again.');
+        }
+        if (error.message.toLowerCase().includes('email not confirmed')) {
+          throw new Error('Please confirm your email first. Check your inbox.');
+        }
+        throw error;
+      }
+      // onAuthStateChange fires → AppContext updates → index.tsx routes to correct screen
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Something went wrong.';
+    Alert.alert('Error', message);
+  } finally {
+    setIsEmailLoading(false);
+  }
+};
+```
+
+### 8.3 — Screen layout (JSX structure)
+
+```
+┌─────────────────────────────────┐
+│         PantrySwipe logo        │
+│     "Swipe. Cook. Love."        │
+│                                 │
+│  ┌───────────────────────────┐  │
+│  │  🔵 Continue with Google  │  │  ← white bg, #F5A623 border, "G" in Google blue
+│  └───────────────────────────┘  │
+│                                 │
+│        ─────── or ───────       │
+│                                 │
+│  ┌───────────────────────────┐  │
+│  │  Email                    │  │
+│  └───────────────────────────┘  │
+│  ┌─────────────────────── 👁 ┐  │
+│  │  Password                 │  │  ← 👁 toggles showPassword
+│  └───────────────────────────┘  │
+│                                 │
+│  ┌───────────────────────────┐  │
+│  │  Sign In / Create Account │  │  ← #F5A623 bg, disabled + spinner while loading
+│  └───────────────────────────┘  │
+│                                 │
+│  Don't have an account?         │
+│  Create one ←→ Already have one?│  ← toggles isNewAccount
+└─────────────────────────────────┘
+```
+
+Both the Google button and the email submit button must:
+- Show `<ActivityIndicator>` in place of the label text while their respective loading state is true
+- Be `disabled` while loading (prevent double-taps)
+- Never disable the other button while one is loading (they are independent)
+
+---
+
+## SECTION 9 — UPDATE app/onboarding.tsx (POST-AUTH FLOW)
+
+### 9.1 — Auth guard
+
+```typescript
+const { authUser, completeOnboarding } = useAppContext();
+
+useEffect(() => {
+  if (!authUser) {
+    router.replace('/welcome');
+  }
+}, [authUser]);
+```
+
+### 9.2 — Step 1: Name confirmation with pre-fill
+
+```typescript
+// Pre-fill from Google metadata. Email users get their email prefix as a fallback.
+const defaultName =
+  authUser?.user_metadata?.full_name ??
+  authUser?.email?.split('@')[0] ??
+  '';
+
+const [displayName, setDisplayName] = useState(defaultName);
+```
+
+Display: `"Welcome! Let's set up your kitchen."` with an editable text input pre-filled with `displayName`. The user can change it before proceeding.
+
+**This `displayName` value — whatever the user types — is what gets passed to `completeOnboarding()`. It is NOT re-read from `user_metadata` at completion time.**
+
+### 9.3 — Three onboarding steps
+
+**Step 1 — Name** (progress: 1/3):
+- Editable display name input (pre-filled, see 9.2)
+- "Next" disabled if `displayName.trim() === ''`
+
+**Step 2 — Dietary preferences** (progress: 2/3):
+- Multi-select: Vegetarian, Vegan, Gluten-Free, Halal, No restrictions
+- "No restrictions" selection clears all other selections instantly
+- Selecting any other option deselects "No restrictions" if it was selected
+- "Next" always enabled (no preference is a valid choice)
+
+**Step 3 — First pantry items** (progress: 3/3):
+- Text input + "Add" button
+- Each added item gets a UUID via:
+  ```typescript
+  const newItem: PantryItem = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,  // unique, no external lib needed
+    name: inputValue.trim(),
+  };
+  ```
+- Running list of added items with a ❌ remove button per item
+- "Get Cooking!" primary button + "Skip for now" text link
+
+### 9.4 — Completion (both "Get Cooking!" and "Skip")
+
+```typescript
+const [isSubmitting, setIsSubmitting] = useState(false);
+
+const handleComplete = async (skipped = false) => {
+  if (isSubmitting) return; // guard against double-tap race
+  setIsSubmitting(true);
+  try {
+    await completeOnboarding({
+      displayName: displayName.trim() || 'Chef',  // displayName from Step 1 state
+      dietaryPreferences: skipped ? [] : selectedPrefs,
+      pantryItems: skipped ? [] : addedItems,
+    });
+    // completeOnboarding calls fetchProfile internally
+    // onAuthStateChange + profile update causes index.tsx to route to /(tabs)
+    router.replace('/(tabs)');
+  } catch (_) {
+    Alert.alert(
+      'Could not save profile',
+      'Please check your connection and try again.',
+      [{ text: 'Retry', onPress: () => handleComplete(skipped) }],
+    );
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+// "Get Cooking!" button: onPress={() => handleComplete(false)}  disabled={isSubmitting}
+// "Skip for now" link:  onPress={() => handleComplete(true)}   disabled={isSubmitting}
+```
+
+---
+
+## SECTION 10 — PROFILE TAB — DISPLAY AUTH DATA
+
+Open `artifacts/pantryswipe/app/(tabs)/profile.tsx`.
+
+### 10.1 — Profile photo with correct error fallback
+
+```typescript
+const { profile } = useAppContext();
+const [avatarError, setAvatarError] = useState(false);
+
+// Reset error state if the avatarUrl changes (e.g. after profile update)
+useEffect(() => {
+  setAvatarError(false);
+}, [profile?.avatarUrl]);
+
+// Derive the initial to show: first letter of displayName, else first letter of email, else '?'
+const initial =
+  profile?.displayName?.charAt(0).toUpperCase() ??
+  profile?.email?.charAt(0).toUpperCase() ??
+  '?';
+
+// ⚠️ Condition must check avatarError too — if the image fails, avatarUrl is still set
+const showAvatar = !!profile?.avatarUrl && !avatarError;
+
+// In JSX:
+{showAvatar ? (
+  <Image
+    source={{ uri: profile!.avatarUrl! }}
+    style={styles.avatar}
+    onError={() => setAvatarError(true)}
+  />
+) : (
+  <View style={[styles.avatar, styles.avatarFallback]}>
+    <Text style={styles.avatarInitial}>{initial}</Text>
+  </View>
+)}
+```
+
+Styles:
+```typescript
+avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: '#F5A623' },
+avatarFallback: { backgroundColor: '#F5A623', justifyContent: 'center', alignItems: 'center' },
+avatarInitial: { color: '#fff', fontSize: 32, fontWeight: '700' },
+```
+
+### 10.2 — Display name and email
+
+```typescript
+<Text style={styles.displayName}>{profile?.displayName ?? 'Chef'}</Text>
+<Text style={styles.email}>{profile?.email ?? ''}</Text>
+```
+
+### 10.3 — Sign Out button
+
+```typescript
+const { signOut } = useAppContext();
+
+const handleSignOut = () => {
+  Alert.alert('Sign Out', 'Are you sure?', [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Sign Out',
+      style: 'destructive',
+      onPress: signOut,  // signOut is already async; Alert handles the async call
+    },
+  ]);
+};
+```
+
+Sign Out button: placed at the bottom of the profile screen, text-only style, colour `#E84040`.
+
+### 10.4 — Edit display name
+
+```typescript
+const { updateProfile } = useAppContext();
+const [editModalVisible, setEditModalVisible] = useState(false);
+const [newName, setNewName] = useState(profile?.displayName ?? '');
+
+const handleSaveName = async () => {
+  try {
+    await updateProfile({ displayName: newName.trim() || 'Chef' });
+    setEditModalVisible(false);
+  } catch (err) {
+    Alert.alert('Error', err instanceof Error ? err.message : 'Could not save. Try again.');
+  }
+};
+```
+
+---
+
+## SECTION 11 — MIGRATE ASYNCSTORAGE → SUPABASE
+
+Replace all AsyncStorage profile writes with `updateProfile()` calls. Work through each of the following.
+
+### 11.1 — Replacement map
+
+| Function | Remove | Replace with |
+|---|---|---|
+| `markRecipeCooked` | `AsyncStorage.setItem('pantryswipe_profile', ...)` | `await updateProfile({ cookedRecipeIds: [...], xp: newXp })` |
+| `updateStreak` | `AsyncStorage.setItem('pantryswipe_streak', ...)` + `AsyncStorage.setItem('pantryswipe_last_cooked_date', ...)` | `await updateProfile({ streak: newStreak, lastCookedDate: todayUTC })` |
+| Pantry add | `AsyncStorage.setItem(...)` | `await updateProfile({ pantryItems: [...profile.pantryItems, newItem] })` |
+| Pantry delete | `AsyncStorage.setItem(...)` | `await updateProfile({ pantryItems: profile.pantryItems.filter(i => i.id !== itemId) })` |
+| Meal planner | `AsyncStorage.setItem(...)` | `await updateProfile({ ... })` |
+
+### 11.2 — Remove obsolete AsyncStorage keys
+
+Remove ALL reads and writes for these keys — they no longer exist:
+- `'pantryswipe_onboarding_complete'`
+- `'pantryswipe_streak'`
+- `'pantryswipe_last_cooked_date'`
+- `'pantryswipe_profile'`
+- `'pantryswipe_display_name'`
+
+### 11.3 — Verification step (do not skip)
+
+After making all replacements, run:
+```bash
+grep -r "AsyncStorage.setItem\|AsyncStorage.getItem\|AsyncStorage.removeItem" artifacts/pantryswipe/
+```
+
+Review every result. Any remaining AsyncStorage call for the keys in 11.2 is a bug — remove it. AsyncStorage calls for other keys (e.g. session storage managed by Supabase internally) are fine and must NOT be removed.
+
+---
+
+## SECTION 12 — API SERVER AUTH VERIFICATION
+
+### 12.1 — Confirm express.json() middleware is present
+
+Open `artifacts/api-server/src/index.ts`. Confirm `app.use(express.json())` is present before ALL routes. Without it, `req.body` is `undefined` and auth headers may not parse correctly. If missing, add it immediately after `const app = express()`.
+
+### 12.2 — Create server Supabase client
+
+Create `artifacts/api-server/src/supabase.ts`:
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn(
+    '[API] ⚠️  SUPABASE_URL or SUPABASE_ANON_KEY not set. ' +
+    'Add them to Replit Secrets and restart the server.'
+  );
+}
+
+// Server-side client — no session storage, no auto-refresh
+// Used only for verifying user tokens via supabase.auth.getUser(token)
+export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '');
+```
+
+### 12.3 — Add auth verification to the AI Chef route
+
+In the `POST /api/ai-chef` handler, add at the very top of the handler (before any other logic):
+
+```typescript
+// Verify the user's session token
+const authHeader = req.headers['authorization'];
+if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  return res.status(401).json({ error: 'Unauthorized: missing Bearer token' });
+}
+
+const token = authHeader.slice(7); // removes 'Bearer '
+const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+if (authError || !user) {
+  return res.status(401).json({ error: 'Unauthorized: invalid or expired session. Please sign in again.' });
+}
+```
+
+### 12.4 — Pass session token from Expo AI Chef screen
+
+In `artifacts/pantryswipe/app/ai-chef.tsx`, add the Authorization header:
+
+```typescript
+const { session } = useAppContext();
+
+const response = await fetch(`${API_BASE}/api/ai-chef`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session?.access_token ?? ''}`,
+  },
+  body: JSON.stringify({ message, pantryItems, conversationHistory }),
+});
+
+// Handle 401 specifically — session may have expired
+if (response.status === 401) {
+  // onAuthStateChange will handle re-authentication
+  throw new Error('Your session expired. Please sign in again.');
+}
+```
+
+---
+
+## SECTION 13 — HANDLE OAUTH DEEP LINK CALLBACK (PKCE EXCHANGE)
+
+This section completes the Google Sign-In flow. After the user signs in via the browser, Google redirects to `pantryswipe://auth/callback?code=XXXX`. The app must catch this URL and give the code to Supabase to exchange for a session.
+
+In `artifacts/pantryswipe/app/_layout.tsx` (root layout — NOT a tab layout), add:
+
+```typescript
+import * as Linking from 'expo-linking';
+import { useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+
+// Inside the root layout component body:
+useEffect(() => {
+  const handleDeepLink = async (url: string) => {
+    // Only process auth callback URLs
+    if (!url.includes('auth/callback')) return;
+
+    // Parse the URL to extract the code parameter
+    const { queryParams } = Linking.parse(url);
+    const code = queryParams?.code;
+
+    if (typeof code === 'string') {
+      // Exchange the PKCE authorization code for a session
+      // This is the correct Supabase v2 PKCE completion method
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (error) {
+        console.error('[Auth] PKCE exchange failed:', error.message);
+        // User will remain on the welcome screen; they can try again
+      }
+      // On success: onAuthStateChange fires with the new session
+      // AppContext updates → index.tsx routes to onboarding or tabs
+    }
+  };
+
+  // Cold start: app was closed when the deep link arrived
+  Linking.getInitialURL().then(url => {
+    if (url) handleDeepLink(url);
+  });
+
+  // Warm start: app was in background
+  const subscription = Linking.addEventListener('url', ({ url }) => handleDeepLink(url));
+
+  return () => subscription.remove();
+}, []); // runs once on mount
+```
+
+**Why `exchangeCodeForSession` and not `getSessionFromUrl`:**
+- `getSessionFromUrl` reads from `window.location` — it is web-only and does nothing in React Native
+- `exchangeCodeForSession(code)` is the correct Supabase v2 React Native PKCE completion method
+- It takes the `code` query parameter, sends it to Supabase, and returns a session
+- No `as never` cast needed — this is the documented API for this use case
+
+---
+
+## SECTION 14 — FINAL VERIFICATION CHECKLIST
+
+Work through every item. Mark each ✅ or ❌ with a note.
+
+**Setup:**
+- [ ] Supabase `profiles` table exists with all columns (verify in Table Editor)
+- [ ] RLS is enabled — Supabase dashboard → profiles table → RLS badge shows "Enabled"
+- [ ] Three RLS policies exist: SELECT, INSERT, UPDATE (verify in Authentication → Policies)
+- [ ] Google OAuth provider is enabled in Supabase Authentication → Providers
+- [ ] `app.json` has `"scheme": "pantryswipe"`
+- [ ] Both `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are in `.env` and Metro has been restarted
+- [ ] `SUPABASE_URL` and `SUPABASE_ANON_KEY` are in Replit Secrets
+
+**Google Sign-In:**
+- [ ] Tapping "Continue with Google" opens a system browser with the Google sign-in page
+- [ ] After completing Google sign-in, the browser closes and the app navigates (new → onboarding, returning → tabs)
+- [ ] Cancelling the browser (pressing back) returns to the welcome screen without an error
+
+**Email/Password:**
+- [ ] Sign-up sends a confirmation email to the address provided
+- [ ] Sign-in with confirmed credentials works and routes correctly
+- [ ] Wrong password shows "Incorrect email or password" — does not crash
+- [ ] Unconfirmed email shows "Please confirm your email first" — does not crash
+- [ ] Empty email/password shows validation alert before attempting auth
+
+**Session persistence (most important):**
+- [ ] Sign in → force-close the app → reopen → lands directly on tabs (no welcome screen)
+- [ ] Profile name and photo are correct immediately after auto-login (not a blank flash)
+
+**New user onboarding:**
+- [ ] Name field is pre-filled with Google name (or email prefix for email users)
+- [ ] User can edit the name and the edited value is what appears in the profile tab
+- [ ] "No restrictions" clears all other dietary selections
+- [ ] Added pantry items each have a unique ID (not "0", "1", "2")
+- [ ] "Skip" and "Get Cooking!" both create the profile row in Supabase (verify in Table Editor)
+- [ ] After onboarding, reopening the app goes directly to tabs — not to onboarding again
+
+**Returning user:**
+- [ ] Returning user → spinner → tabs, no onboarding
+- [ ] Profile photo shows correctly OR initials show if photo fails to load (test by changing `avatarUrl` to an invalid URL temporarily)
+- [ ] initials fallback shows the first letter of the display name, not a broken image icon
+
+**Data persistence:**
+- [ ] Cooking a recipe → check `cooked_recipe_ids` column updated in Supabase Table Editor
+- [ ] Adding pantry item → check `pantry_items` column updated
+- [ ] Streak and XP survive a full app restart
+- [ ] Editing display name → shows immediately in UI AND in Supabase Table Editor
+
+**Security:**
+- [ ] AI Chef endpoint returns 401 when called without an Authorization header (test with curl or Postman)
+- [ ] No service role key anywhere in the Expo app codebase
+- [ ] `grep -r "AsyncStorage.setItem\|AsyncStorage.getItem" artifacts/pantryswipe/` shows no hits for the removed keys
+
+**Report any item that could NOT be completed and explain why.**
+
+---
+
+## IMPORTANT CONSTRAINTS
+
+- Supabase **anon key** is safe in the Expo app — RLS enforces data isolation. **Service role key must NEVER appear in the app.**
+- Do NOT call `supabase.auth.getSession()` separately from `onAuthStateChange` — the listener handles the initial session on mount (INITIAL_SESSION event). Calling both causes a double-fetchProfile race condition.
+- Do NOT call `supabase.auth.setSession()` manually after Google sign-in — `exchangeCodeForSession(code)` handles it.
+- Do NOT use `getSessionFromUrl()` — it is web-only and does nothing in React Native.
+- Do NOT use `AuthSession.parseRedirectParams` — that is for implicit flow; Supabase v2 uses PKCE.
+- Do NOT modify `app/(tabs)/_layout.tsx`.
+- Do NOT add guest/anonymous sign-in.
+- Do NOT break existing features — auth is a new layer on top of the existing app.
+- After ANY `.env` change, restart Metro fully before testing.
