@@ -221,7 +221,7 @@ export default function ProfileScreen() {
                 )}
                 {/* Show real photo if set, otherwise initials */}
                 {userProfile.photoUri ? (
-                  <Image source={{ uri: userProfile.photoUri }} style={styles.avatarPhoto} onError={() => {}} />
+                  <Image source={{ uri: userProfile.photoUri }} style={styles.avatarPhoto} />
                 ) : (
                   <View style={[styles.avatarInner, { backgroundColor: colors.primary }]}>
                     <Text style={[styles.avatarLetter, { fontFamily: "Inter_700Bold" }]}>

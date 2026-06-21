@@ -14,9 +14,10 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useApp } from "@/context/AppContext";
-import { supabase } from "@/lib/supabase";
 import { useColors } from "@/hooks/useColors";
+import { STORAGE_KEYS } from "@/constants/storageKeys";
 import ScanReceiptModal from "@/components/ScanReceiptModal";
 import ConfirmationEditScreen from "@/components/ConfirmationEditScreen";
 import type { DetectedItem, ScanSource } from "@/types/scanning";
@@ -142,7 +143,7 @@ function isValidName(n: string) { return /^[a-zA-Z\s\-]+$/.test(n.trim()) && n.t
 export default function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { updateProfile, addToPantry, authUser, isLoadingAuth, completeOnboarding } = useApp();
+  const { updateProfile, completeSetup, addToPantry } = useApp();
   const appColors = useColors();
 
   const OB = useMemo(() => ({
@@ -198,18 +199,6 @@ export default function OnboardingScreen() {
   const loadingProgress = useRef(new Animated.Value(0)).current;
   const loadingWidth = loadingProgress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
   const foodAnims = useRef(FOOD_EMOJIS.map(() => new Animated.Value(0))).current;
-
-  // Auth guard — redirect unauthenticated users to welcome
-  useEffect(() => {
-    if (!isLoadingAuth && !authUser) {
-      router.replace("/welcome");
-    }
-  }, [isLoadingAuth, authUser]);
-
-  // Pre-fill email from authenticated user (Google / email sign-up)
-  useEffect(() => {
-    if (authUser?.email) setEmail(authUser.email);
-  }, [authUser?.email]);
 
   const [step, setStep] = useState(0);
   const [showCreating, setShowCreating] = useState(false);
@@ -273,7 +262,7 @@ export default function OnboardingScreen() {
       id: `m${Date.now()}`,
       emoji: emojis[manualCategory] || "🍽️",
       name: manualName.trim(),
-      quantity: Number.isNaN(parseFloat(manualQty)) ? 1 : parseFloat(manualQty),
+      quantity: parseFloat(manualQty) || 1,
       unit: manualUnit,
       category: manualCategory.toLowerCase(),
       location: "pantry",
@@ -306,9 +295,7 @@ export default function OnboardingScreen() {
 
   const isStepValid = (s: number) => {
     switch (s) {
-      case 0: return authUser
-        ? nameOk && termsChecked
-        : nameOk && emailOk && allPwRulesMet && pwMatch && termsChecked;
+      case 0: return nameOk && emailOk && allPwRulesMet && pwMatch && termsChecked;
       case 1: return true;
       case 2: return !!skillLevel;
       case 3: return !!weeklyBudget;
@@ -363,17 +350,29 @@ export default function OnboardingScreen() {
       clearInterval(interval);
       setLoadingDone(true);
       setTimeout(async () => {
-        // If not yet signed up (fallback: no authUser), create Supabase account first
-        if (!authUser) {
-          try {
-            await supabase.auth.signUp({ email: email.trim(), password });
-          } catch { /* continue even if offline */ }
+        // Register account on backend — non-blocking, app works even if offline
+        try {
+          const res = await fetch(`${API_BASE}/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: name.trim(),
+              email: email.trim(),
+              password,
+            }),
+          });
+          const data = await res.json();
+          if (data.token) {
+            await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, data.token);
+          }
+        } catch {
+          // API unavailable — continue without token
         }
-        await completeOnboarding({
-          name: name.trim(), email: email.trim(), skillLevel,
-          dietType: dietTypes, allergies, proteinPreferences, goal,
-          cuisinePreferences: selectedCuisines, householdSize, weeklyBudget,
-        });
+        updateProfile({ name: name.trim(), email: email.trim(), skillLevel, dietType: dietTypes, allergies, proteinPreferences, goal, cuisinePreferences: selectedCuisines, householdSize, weeklyBudget });
+        // Write SETUP_COMPLETE directly (not fire-and-forget) so Android's SQLite
+        // flushes before we navigate — then call completeSetup() to sync context state.
+        await AsyncStorage.setItem(STORAGE_KEYS.SETUP_COMPLETE, "true");
+        completeSetup();
         // Give Android's JS bridge one extra tick before triggering navigation
         await new Promise<void>((resolve) => setTimeout(resolve, 50));
         router.replace("/(tabs)");

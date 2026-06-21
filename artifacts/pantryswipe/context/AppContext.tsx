@@ -1,11 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Session, User } from "@supabase/supabase-js";
 import { INITIAL_PANTRY, MOCK_RECIPES, PantryItem, Recipe } from "@/data/mockData";
 import { STORAGE_KEYS } from "@/constants/storageKeys";
-import { supabase } from "@/lib/supabase";
-import type { SupabaseProfile } from "@/types/supabaseProfile";
 
 // ─── Unit normalisation ───────────────────────────────────────────────────────
 function normalizeUnit(unit: string): string {
@@ -209,17 +206,8 @@ interface AppContextType {
   recipesLoading: boolean;
   followingList: string[];
   savedPostIds: string[];
-  authUser: User | null;
-  session: Session | null;
-  isLoadingAuth: boolean;
-  supabaseProfile: SupabaseProfile | null;
   updateProfile: (profile: Partial<UserProfile>) => void;
   completeSetup: () => void;
-  completeOnboarding: (data: {
-    name: string; email: string; skillLevel: string; dietType: string[];
-    allergies: string[]; proteinPreferences: string[]; goal: string;
-    cuisinePreferences: string[]; householdSize: number; weeklyBudget: number;
-  }) => Promise<void>;
   signOut: () => Promise<void>;
   addToPantry: (item: PantryItem) => void;
   removeFromPantry: (id: string) => void;
@@ -303,47 +291,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [followingList, setFollowingList] = useState<string[]>([]);
   const [savedPostIds, setSavedPostIds] = useState<string[]>([]);
 
-  const [authUser, setAuthUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [supabaseProfile, setSupabaseProfile] = useState<SupabaseProfile | null>(null);
-
-  const fetchProfile = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-      if (error || !data) { setSupabaseProfile(null); return; }
-      setSupabaseProfile(data as SupabaseProfile);
-    } catch {
-      setSupabaseProfile(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setAuthUser(s?.user ?? null);
-      if (s?.user) { fetchProfile(s.user.id); }
-      else { setIsLoadingAuth(false); }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      setAuthUser(s?.user ?? null);
-      if (s?.user) {
-        fetchProfile(s.user.id).finally(() => setIsLoadingAuth(false));
-      } else {
-        setSupabaseProfile(null);
-        setIsLoadingAuth(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [fetchProfile]);
-
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
@@ -362,33 +309,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
           AsyncStorage.getItem(STORAGE_KEYS.SOCIAL_SAVED_POSTS),
         ]);
 
-      const safeParse = <T,>(raw: string | null): T | null => {
-        if (!raw) return null;
-        try { return JSON.parse(raw) as T; } catch { return null; }
-      };
+      const loadedProfile: UserProfile | undefined = profileData
+        ? (JSON.parse(profileData) as UserProfile) : undefined;
 
-      const loadedProfile = safeParse<UserProfile>(profileData);
       if (loadedProfile) setUserProfile(loadedProfile);
-      const parsedPantry = safeParse<typeof INITIAL_PANTRY>(pantryData);
-      if (parsedPantry) setPantryItems(parsedPantry);
-      const parsedSaved = safeParse<string[]>(savedData);
-      if (parsedSaved) setSavedRecipes(parsedSaved);
-      const parsedCooked = safeParse<string[]>(cookedData);
-      if (parsedCooked) setCookedRecipes(parsedCooked);
-      const parsedStats = safeParse<typeof defaultStats>(statsData);
-      if (parsedStats) setStats(parsedStats);
-      const parsedSetup = safeParse<boolean>(setupData);
-      if (parsedSetup !== null) setIsSetupComplete(parsedSetup);
-      const parsedHistory = safeParse<unknown[]>(historyData);
-      if (parsedHistory) setCookingHistory(parsedHistory as any);
-      const parsedLearning = safeParse<typeof defaultLearning>(learningData);
-      if (parsedLearning) setLearningProfile(parsedLearning);
-      const parsedFollowing = safeParse<string[]>(followingData);
-      if (parsedFollowing) setFollowingList(parsedFollowing);
-      const parsedSavedPosts = safeParse<string[]>(savedPostsData);
-      if (parsedSavedPosts) setSavedPostIds(parsedSavedPosts);
+      if (pantryData) setPantryItems(JSON.parse(pantryData));
+      if (savedData) setSavedRecipes(JSON.parse(savedData));
+      if (cookedData) setCookedRecipes(JSON.parse(cookedData));
+      if (statsData) setStats(JSON.parse(statsData));
+      if (setupData) setIsSetupComplete(JSON.parse(setupData));
+      if (historyData) setCookingHistory(JSON.parse(historyData));
+      if (learningData) setLearningProfile(JSON.parse(learningData));
+      if (followingData) setFollowingList(JSON.parse(followingData));
+      if (savedPostsData) setSavedPostIds(JSON.parse(savedPostsData));
 
-      fetchLiveRecipes(loadedProfile ?? undefined);
+      fetchLiveRecipes(loadedProfile);
     } catch {
       fetchLiveRecipes();
     }
@@ -447,7 +382,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async (): Promise<void> => {
-    try { await supabase.auth.signOut(); } catch { /* ignore */ }
     try {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.AUTH_TOKEN,
@@ -462,7 +396,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         STORAGE_KEYS.SOCIAL_FOLLOWING,
         STORAGE_KEYS.SOCIAL_SAVED_POSTS,
       ]);
-    } catch { /* ignore */ }
+    } catch { /* ignore storage errors */ }
     setUserProfile(defaultProfile);
     setPantryItems(INITIAL_PANTRY);
     setSavedRecipes([]);
@@ -473,49 +407,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLearningProfile(defaultLearning);
     setFollowingList([]);
     setSavedPostIds([]);
-    setSupabaseProfile(null);
-    setAuthUser(null);
-    setSession(null);
-  };
-
-  const completeOnboarding = async (data: {
-    name: string; email: string; skillLevel: string; dietType: string[];
-    allergies: string[]; proteinPreferences: string[]; goal: string;
-    cuisinePreferences: string[]; householdSize: number; weeklyBudget: number;
-  }): Promise<void> => {
-    const userId = authUser?.id;
-    if (userId) {
-      const profileRow = {
-        id: userId,
-        display_name: data.name,
-        avatar_url: authUser?.user_metadata?.avatar_url ?? null,
-        diet_preferences: data.dietType,
-        allergies: data.allergies,
-        protein_preferences: data.proteinPreferences,
-        skill_level: data.skillLevel,
-        household_size: data.householdSize,
-        cuisine_preferences: data.cuisinePreferences,
-        goal: data.goal,
-        weekly_budget: data.weeklyBudget,
-        onboarding_complete: true,
-        updated_at: new Date().toISOString(),
-      };
-      const { data: saved } = await (supabase
-        .from("profiles") as any)
-        .upsert(profileRow, { onConflict: "id" })
-        .select()
-        .single();
-      if (saved) setSupabaseProfile(saved as SupabaseProfile);
-    }
-    updateProfile({
-      name: data.name, email: data.email, skillLevel: data.skillLevel,
-      dietType: data.dietType, allergies: data.allergies,
-      proteinPreferences: data.proteinPreferences, goal: data.goal,
-      cuisinePreferences: data.cuisinePreferences,
-      householdSize: data.householdSize, weeklyBudget: data.weeklyBudget,
-    });
-    await AsyncStorage.setItem(STORAGE_KEYS.SETUP_COMPLETE, "true");
-    completeSetup();
   };
 
   const followUser = (handle: string) => {
@@ -829,8 +720,7 @@ function recipeContainsProtein(recipe: Recipe, protein: string): boolean {
         userProfile, pantryItems, savedRecipes, cookedRecipes, cookingHistory,
         stats, isSetupComplete, liveRecipes, recipesLoading,
         followingList, savedPostIds,
-        authUser, session, isLoadingAuth, supabaseProfile,
-        updateProfile, completeSetup, completeOnboarding, signOut,
+        updateProfile, completeSetup, signOut,
         addToPantry, removeFromPantry, updatePantryItem,
         saveRecipe, unsaveRecipe, markCooked, cookDish,
         getMatchingRecipes, getPantryMatchScore, getIngredientMatches, refreshRecipes,
