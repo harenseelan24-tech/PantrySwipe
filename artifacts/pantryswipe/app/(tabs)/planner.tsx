@@ -469,33 +469,36 @@ export default function PlannerScreen() {
             </View>
           </View>
         )}
-      </ScrollView>
 
-      {/* ── Party Planner pill — fixed above tab bar, never overlaps scroll content ── */}
-      <View
-        style={[
-          styles.partyPill,
-          { bottom: insets.bottom + 72 },
-        ]}
-        pointerEvents="box-none"
-      >
+        {/* ── Party Planner card — inside scroll so it never floats over content ── */}
         <TouchableOpacity
-          style={styles.partyPillInner}
+          style={styles.partyCard}
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/party-planner"); }}
-          activeOpacity={0.88}
+          activeOpacity={0.86}
         >
-          <View style={styles.partyPillLeft}>
-            <Text style={styles.partyPillEmoji}>🎉</Text>
-            <View>
-              <Text style={styles.partyPillTitle}>Party Planner</Text>
-              <Text style={styles.partyPillSub}>Plan a menu for your next event</Text>
+          {/* Decorative top-right glow */}
+          <View style={styles.partyGlow} />
+
+          <View style={styles.partyCardLeft}>
+            <View style={styles.partyIconWrap}>
+              <Text style={styles.partyEmoji}>🎉</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.partyBadgeRow}>
+                <View style={styles.partyBadge}>
+                  <Text style={styles.partyBadgeText}>NEW</Text>
+                </View>
+              </View>
+              <Text style={styles.partyTitle}>Party Planner</Text>
+              <Text style={styles.partySub}>Build a full event menu — starters, mains, desserts & timeline</Text>
             </View>
           </View>
-          <View style={styles.partyPillArrow}>
-            <Feather name="arrow-right" size={16} color="#fff" />
+
+          <View style={styles.partyArrowWrap}>
+            <Feather name="chevron-right" size={18} color="#fff" />
           </View>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
       {/* ── Meal Detail Modal ── */}
       <Modal visible={!!selectedMeal} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setSelectedMeal(null)}>
@@ -566,7 +569,7 @@ const styles = StyleSheet.create({
   viewToggle: { flexDirection: "row", marginHorizontal: 20, borderRadius: 12, padding: 3, marginBottom: 16, borderWidth: 1 },
   viewBtn: { flex: 1, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 10 },
   viewBtnText: { fontSize: 13 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 160 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
   weekNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
   navBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   weekLabel: { fontSize: 14 },
@@ -636,54 +639,82 @@ const styles = StyleSheet.create({
   mealDetailBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14 },
   mealDetailBtnText: { fontSize: 15 },
 
-  partyPill: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    alignItems: "center",
-  },
-  partyPillInner: {
-    width: "100%",
+  partyCard: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#1C1A28",
+    backgroundColor: "#18122B",
     borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
     borderWidth: 1,
-    borderColor: "rgba(155,109,255,0.35)",
-    shadowColor: "#9B6DFF",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 14,
-    elevation: 8,
+    borderColor: "rgba(155,109,255,0.30)",
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 6,
+    overflow: "hidden",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 16,
+    elevation: 6,
   },
-  partyPillLeft: {
+  partyGlow: {
+    position: "absolute",
+    top: -30,
+    right: -30,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(155,109,255,0.18)",
+  },
+  partyCardLeft: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    flex: 1,
+    gap: 14,
   },
-  partyPillEmoji: { fontSize: 26 },
-  partyPillTitle: {
-    fontSize: 15,
-    color: "#fff",
-    fontFamily: "Inter_700Bold",
-    letterSpacing: -0.2,
-  },
-  partyPillSub: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.5)",
-    fontFamily: "Inter_400Regular",
-    marginTop: 1,
-  },
-  partyPillArrow: {
-    width: 32,
-    height: 32,
+  partyIconWrap: {
+    width: 52,
+    height: 52,
     borderRadius: 16,
-    backgroundColor: "#9B6DFF",
+    backgroundColor: "rgba(155,109,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(155,109,255,0.30)",
+  },
+  partyEmoji: { fontSize: 26 },
+  partyBadgeRow: { flexDirection: "row", marginBottom: 4 },
+  partyBadge: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  partyBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 1,
+  },
+  partyTitle: {
+    fontSize: 16,
+    color: "#fff",
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
+    marginBottom: 3,
+  },
+  partySub: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.48)",
+    fontFamily: "Inter_400Regular",
+    lineHeight: 16,
+  },
+  partyArrowWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#7C3AED",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
   },
 });
