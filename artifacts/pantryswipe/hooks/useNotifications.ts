@@ -3,11 +3,8 @@ import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
-const UNREAD_KEY    = "@pantryswipe:notif_unread";
-const CLEARED_KEY   = "@pantryswipe:notif_cleared";
-// Bump version → forces cancelAll + re-schedule once on next launch,
-// clearing any duplicate notifications from the old race-condition bug.
-const SCHEDULED_KEY = "@pantryswipe:notif_scheduled_v3";
+const UNREAD_KEY  = "@pantryswipe:notif_unread";
+const CLEARED_KEY = "@pantryswipe:notif_cleared";
 
 const MEAL_SCHEDULE = [
   { id: "notif_breakfast", hour: 7,  minute: 30, title: "Good morning! 🍳", body: "Shall we see what we can make for breakfast today?" },
@@ -16,16 +13,18 @@ const MEAL_SCHEDULE = [
   { id: "notif_dinner",    hour: 18, minute: 30, title: "Dinner time! 🍽️", body: "Shall we see what we can cook for dinner tonight?" },
 ];
 
+const EXPECTED_IDS = new Set(MEAL_SCHEDULE.map((m) => m.id));
+
 // ─── Module-level singleton ────────────────────────────────────────────────────
-// No matter how many components call useNotifications(), scheduling runs exactly
-// once per app session. The promise is shared — concurrent callers await the same
-// work instead of each starting their own copy.
+// Ensures scheduling/dedup runs exactly once per app session no matter how many
+// components mount the hook simultaneously.
 let _schedulePromise: Promise<void> | null = null;
 
 async function _doSchedule(): Promise<void> {
   try {
     if (Platform.OS === "web") return;
 
+    // Request permission first.
     const existing = await Notifications.getPermissionsAsync();
     let granted = !!(existing as { granted?: boolean }).granted;
     if (!granted) {
@@ -34,25 +33,39 @@ async function _doSchedule(): Promise<void> {
     }
     if (!granted) return;
 
-    const alreadyScheduled = await AsyncStorage.getItem(SCHEDULED_KEY);
-    if (alreadyScheduled) return;
+    // ── Dedup check ──────────────────────────────────────────────────────────
+    // Inspect what's actually scheduled in the OS right now.
+    // If there are ANY duplicates (same id appearing more than once) or any
+    // unexpected ids, cancel everything and start clean.
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
 
-    // Cancel everything first — clears any duplicates from previous runs.
-    await Notifications.cancelAllScheduledNotificationsAsync();
-
-    for (const meal of MEAL_SCHEDULE) {
-      await Notifications.scheduleNotificationAsync({
-        identifier: meal.id,
-        content: { title: meal.title, body: meal.body, sound: true, data: { mealType: meal.id } },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: meal.hour,
-          minute: meal.minute,
-        },
-      });
+    const idCounts: Record<string, number> = {};
+    for (const n of scheduled) {
+      const id = n.identifier;
+      idCounts[id] = (idCounts[id] ?? 0) + 1;
     }
 
-    await AsyncStorage.setItem(SCHEDULED_KEY, "1");
+    const hasDuplicates = Object.values(idCounts).some((count) => count > 1);
+    const hasWrongIds   = scheduled.some((n) => !EXPECTED_IDS.has(n.identifier));
+    const hasMissing    = MEAL_SCHEDULE.some((m) => !idCounts[m.id]);
+
+    if (hasDuplicates || hasWrongIds || hasMissing) {
+      // Something is off — wipe everything and rebuild exactly 4 notifications.
+      await Notifications.cancelAllScheduledNotificationsAsync();
+
+      for (const meal of MEAL_SCHEDULE) {
+        await Notifications.scheduleNotificationAsync({
+          identifier: meal.id,
+          content: { title: meal.title, body: meal.body, sound: true, data: { mealType: meal.id } },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: meal.hour,
+            minute: meal.minute,
+          },
+        });
+      }
+    }
+    // If already exactly correct (4 unique, correct ids) — do nothing.
   } catch (e) {
     console.warn("[PantrySwipe] Notification scheduling error:", e);
   }
@@ -89,8 +102,9 @@ export function useNotifications() {
       bumpCount();
     });
 
-    // Kick off scheduling via the singleton — safe to call from multiple components.
-    ensureScheduled().then(() => setPermissionGranted(true)).catch(() => {});
+    ensureScheduled()
+      .then(() => setPermissionGranted(true))
+      .catch(() => {});
 
     return () => receivedSub.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps
