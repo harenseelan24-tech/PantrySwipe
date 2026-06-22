@@ -471,6 +471,32 @@ export default function PlannerScreen() {
         )}
       </ScrollView>
 
+      {/* ── Party Planner pill — fixed above tab bar, never overlaps scroll content ── */}
+      <View
+        style={[
+          styles.partyPill,
+          { bottom: insets.bottom + 72 },
+        ]}
+        pointerEvents="box-none"
+      >
+        <TouchableOpacity
+          style={styles.partyPillInner}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); router.push("/party-planner"); }}
+          activeOpacity={0.88}
+        >
+          <View style={styles.partyPillLeft}>
+            <Text style={styles.partyPillEmoji}>🎉</Text>
+            <View>
+              <Text style={styles.partyPillTitle}>Party Planner</Text>
+              <Text style={styles.partyPillSub}>Plan a menu for your next event</Text>
+            </View>
+          </View>
+          <View style={styles.partyPillArrow}>
+            <Feather name="arrow-right" size={16} color="#fff" />
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Meal Detail Modal ── */}
       <Modal visible={!!selectedMeal} animationType="slide" presentationStyle="formSheet" onRequestClose={() => setSelectedMeal(null)}>
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
@@ -540,7 +566,7 @@ const styles = StyleSheet.create({
   viewToggle: { flexDirection: "row", marginHorizontal: 20, borderRadius: 12, padding: 3, marginBottom: 16, borderWidth: 1 },
   viewBtn: { flex: 1, height: 34, alignItems: "center", justifyContent: "center", borderRadius: 10 },
   viewBtnText: { fontSize: 13 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 120 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 160 },
   weekNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
   navBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   weekLabel: { fontSize: 14 },
@@ -609,4 +635,55 @@ const styles = StyleSheet.create({
   mealDetailBtns: { flexDirection: "row", gap: 12 },
   mealDetailBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 14 },
   mealDetailBtnText: { fontSize: 15 },
+
+  partyPill: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    alignItems: "center",
+  },
+  partyPillInner: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#1C1A28",
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderWidth: 1,
+    borderColor: "rgba(155,109,255,0.35)",
+    shadowColor: "#9B6DFF",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  partyPillLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  partyPillEmoji: { fontSize: 26 },
+  partyPillTitle: {
+    fontSize: 15,
+    color: "#fff",
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.2,
+  },
+  partyPillSub: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.5)",
+    fontFamily: "Inter_400Regular",
+    marginTop: 1,
+  },
+  partyPillArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#9B6DFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
